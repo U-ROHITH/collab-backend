@@ -72,7 +72,7 @@ class DeliverablesView(APIView):
     @extend_schema(responses=DeliverableOutput(many=True))
     def get(self, request: Request, order_id: UUID) -> Response:
         order = _visible_order(request, order_id)
-        return Response(DeliverableOutput(order.deliverable_versions.all(), many=True).data)
+        return Response(DeliverableOutput(order.deliverable_versions.select_related("upload"), many=True).data)
 
     @extend_schema(request=DeliverableInput, responses={201: DeliverableOutput})
     def post(self, request: Request, order_id: UUID) -> Response:
@@ -83,7 +83,8 @@ class DeliverablesView(APIView):
         deliverable = services.submit_deliverable(
             actor=request.user,
             order_id=order_id,
-            content_url=data.validated_data["contentUrl"],
+            content_url=data.validated_data.get("contentUrl", ""),
+            file_upload_id=data.validated_data.get("fileUploadId"),
             note=data.validated_data["note"],
         )
         return Response(DeliverableOutput(deliverable).data, status=status.HTTP_201_CREATED)

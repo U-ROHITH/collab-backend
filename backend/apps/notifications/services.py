@@ -10,9 +10,19 @@ from apps.notifications.models import Notification
 def notify(*, user_id: Any, type: str, title: str, body: str = "", data: dict[str, Any] | None = None) -> Notification:  # noqa: A002
     """In-app notification, written in the caller's transaction (rolls back with it).
 
-    Phase 3: an outbox event fans this out to WebSocket, web push and email.
+    Also pushed live over WebSocket after commit. Web push and email come later (outbox).
     """
-    return Notification.objects.create(user_id=user_id, type=type, title=title, body=body, data=data or {})
+    from apps.realtime.push import push_to_user
+
+    n = Notification.objects.create(user_id=user_id, type=type, title=title, body=body, data=data or {})
+    push_to_user(
+        user_id,
+        {
+            "event": "notification",
+            "notification": {"id": str(n.id), "type": n.type, "title": n.title, "data": n.data, "read": False},
+        },
+    )
+    return n
 
 
 def mark_read(*, user: Any, notification_id: UUID) -> Notification:

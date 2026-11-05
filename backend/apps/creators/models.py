@@ -90,3 +90,15 @@ class CreatorPackage(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.creator} — {self.title}"
+
+
+class CreatorMedia(BaseModel):
+    """Portfolio gallery image (public, re-encoded WebP)."""
+
+    creator = models.ForeignKey(Creator, on_delete=models.CASCADE, related_name="media")
+    upload = models.OneToOneField("uploads.Upload", on_delete=models.CASCADE, related_name="gallery_item")
+    url = models.URLField(max_length=600)
+    sort = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ("sort", "created_at")

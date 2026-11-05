@@ -93,11 +93,23 @@ def _notify_other(order: Order, actor: User, type_: str, title: str) -> None:
             notify(user_id=user_id, type=type_, title=title, data={"orderId": str(order.pk)})
 
 
-def submit_deliverable(*, actor: User, order_id: UUID, content_url: str, note: str) -> Deliverable:
+def submit_deliverable(
+    *, actor: User, order_id: UUID, content_url: str = "", file_upload_id: UUID | None = None, note: str
+) -> Deliverable:
+    from apps.uploads.models import UploadKind
+    from apps.uploads.services import claim_ready_upload
+
     with transaction.atomic():
         order = _apply(order_id, actor=actor, role=Role.CREATOR, event="submit_draft", visible_to=actor)
+        upload = None
+        if file_upload_id:
+            upload = claim_ready_upload(user=actor, upload_id=file_upload_id, kind=UploadKind.DELIVERABLE)
+            if Deliverable.objects.filter(upload=upload).exists():
+                raise Conflict("This file is already attached to a draft.", code="ATTACHMENT_IN_USE")
         next_version = (order.deliverable_versions.aggregate(v=Max("version"))["v"] or 0) + 1
-        deliverable = Deliverable.objects.create(order=order, version=next_version, content_url=content_url, note=note)
+        deliverable = Deliverable.objects.create(
+            order=order, version=next_version, content_url=content_url, upload=upload, note=note
+        )
         _notify_other(order, actor, "deliverable_submitted", f"Draft {next_version} submitted for {order.title}")
     return deliverable
 

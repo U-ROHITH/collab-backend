@@ -13,6 +13,8 @@ v1 = [
     path("", include("apps.offers.urls")),
     path("", include("apps.orders.urls")),
     path("", include("apps.notifications.urls")),
+    path("", include("apps.uploads.urls")),
+    path("", include("apps.messaging.urls")),
 ]
 
 urlpatterns = [

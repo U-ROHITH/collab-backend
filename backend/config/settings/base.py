@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "drf_spectacular",
+    "channels",
     "apps.core",
     "apps.identity",
     "apps.brands",
@@ -37,6 +38,9 @@ INSTALLED_APPS = [
     "apps.offers",
     "apps.orders",
     "apps.notifications",
+    "apps.uploads",
+    "apps.messaging",
+    "apps.realtime",
 ]
 
 MIDDLEWARE = [
@@ -118,6 +122,20 @@ if REDIS_URL:
 else:
     CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
+# --- Realtime (Django Channels) -----------------------------------------------------------------
+# Redis is required when more than one process serves WebSockets (production); in-memory is dev-only.
+if REDIS_URL:
+    CHANNEL_LAYERS = {"default": {"BACKEND": "channels_redis.core.RedisChannelLayer", "CONFIG": {"hosts": [REDIS_URL]}}}
+else:
+    CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
+
+# --- File storage (Supabase Storage; service key is server-only) -----------------------------
+SUPABASE_URL = env("SUPABASE_URL", default="")
+SUPABASE_SERVICE_ROLE_KEY = env("SUPABASE_SERVICE_ROLE_KEY", default="")
+STORAGE_PUBLIC_BUCKET = env("STORAGE_PUBLIC_BUCKET", default="public-media")
+STORAGE_PRIVATE_BUCKET = env("STORAGE_PRIVATE_BUCKET", default="private")
+GALLERY_MAX_ITEMS = 12
+
 # --- CORS -----------------------------------------------------------------------------------
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
 CORS_ALLOW_CREDENTIALS = False  # bearer tokens, not cookies
@@ -148,6 +166,7 @@ REST_FRAMEWORK = {
         "bids": "30/hour",
         "offers": "50/day",
         "writes": "60/min",
+        "messages": "30/min",
     },
     "NUM_PROXIES": env.int("NUM_PROXIES", default=0),
     "UNAUTHENTICATED_USER": None,

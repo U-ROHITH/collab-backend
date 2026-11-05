@@ -99,7 +99,10 @@ class OrderEvent(BaseModel):
 class Deliverable(BaseModel):
     order = models.ForeignKey(Order, on_delete=models.PROTECT, related_name="deliverable_versions")
     version = models.PositiveSmallIntegerField()
-    content_url = models.URLField(max_length=1000)
+    content_url = models.URLField(max_length=1000, blank=True)  # external link, or…
+    upload = models.OneToOneField(  # …a file uploaded to our private storage
+        "uploads.Upload", null=True, blank=True, on_delete=models.PROTECT, related_name="deliverable"
+    )
     note = models.TextField(max_length=2000, blank=True)
     feedback = models.TextField(max_length=4000, blank=True)  # brand's revision feedback on this version
 

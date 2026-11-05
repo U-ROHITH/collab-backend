@@ -12,3 +12,11 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {k: "10000/min" for k in REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]},
 }
 STORAGES = {**STORAGES, "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}}  # noqa: F405
+CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
+SUPABASE_URL = "https://storage.test"
+SUPABASE_SERVICE_ROLE_KEY = "test-service-key"
+
+# Safety: tests create/destroy a database. Never allow that against a remote (e.g. production) server.
+_test_db_host = DATABASES["default"].get("HOST", "")  # noqa: F405
+if _test_db_host not in ("localhost", "127.0.0.1", "postgres", ""):
+    raise RuntimeError(f"Refusing to run tests against non-local database host {_test_db_host!r}.")

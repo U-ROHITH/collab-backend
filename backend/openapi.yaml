@@ -495,6 +495,147 @@ paths:
                 items:
                   $ref: '#/components/schemas/OrderOutput'
           description: ''
+  /v1/conversations/:
+    get:
+      operationId: conversations_list
+      parameters:
+      - name: cursor
+        required: false
+        in: query
+        description: The pagination cursor value.
+        schema:
+          type: string
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - conversations
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedConversationOutputList'
+          description: ''
+    post:
+      operationId: conversations_create
+      tags:
+      - conversations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConversationOpenInputRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationOutput'
+          description: ''
+  /v1/conversations/{conversation_id}/:
+    get:
+      operationId: conversations_retrieve
+      parameters:
+      - in: path
+        name: conversation_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - conversations
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationOutput'
+          description: ''
+  /v1/conversations/{conversation_id}/messages/:
+    get:
+      operationId: conversations_messages_list
+      parameters:
+      - in: path
+        name: conversation_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: cursor
+        required: false
+        in: query
+        description: The pagination cursor value.
+        schema:
+          type: string
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - conversations
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedMessageOutputList'
+          description: ''
+    post:
+      operationId: conversations_messages_create
+      parameters:
+      - in: path
+        name: conversation_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - conversations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MessageInputRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageOutput'
+          description: ''
+  /v1/conversations/{conversation_id}/read/:
+    post:
+      operationId: conversations_read_create
+      parameters:
+      - in: path
+        name: conversation_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - conversations
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
   /v1/creators/:
     get:
       operationId: creators_list
@@ -710,6 +851,23 @@ paths:
               schema:
                 $ref: '#/components/schemas/CampaignOutput'
           description: ''
+  /v1/creators/me/media/{media_id}/:
+    delete:
+      operationId: creators_me_media_destroy
+      parameters:
+      - in: path
+        name: media_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - creators
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
   /v1/creators/me/offers/:
     get:
       operationId: creators_me_offers_list
@@ -1369,7 +1527,6 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/DeliverableInputRequest'
-        required: true
       security:
       - bearerAuth: []
       responses:
@@ -1459,6 +1616,86 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OrderOutput'
+          description: ''
+  /v1/realtime/ticket/:
+    post:
+      operationId: realtime_ticket_create
+      description: Trade your JWT for a single-use ticket, then open wss://<host>/ws/?ticket=<ticket>
+        within 30s.
+      tags:
+      - realtime
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RealtimeTicket'
+          description: ''
+  /v1/uploads/:
+    post:
+      operationId: uploads_create
+      description: 'Step 1: get a single-use URL. Step 2: PUT the file there. Step
+        3: call /complete/.'
+      tags:
+      - uploads
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadCreateInputRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadCreatedOutput'
+          description: ''
+  /v1/uploads/{upload_id}/complete/:
+    post:
+      operationId: uploads_complete_create
+      parameters:
+      - in: path
+        name: upload_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - uploads
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadOutput'
+          description: ''
+  /v1/uploads/{upload_id}/download-url/:
+    get:
+      operationId: uploads_download_url_retrieve
+      parameters:
+      - in: path
+        name: upload_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - uploads
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadUrlOutput'
           description: ''
 components:
   schemas:
@@ -1794,6 +2031,43 @@ components:
           $ref: '#/components/schemas/UsageRightsRequest'
       required:
       - usageRights
+    ConversationOpenInputRequest:
+      type: object
+      description: Brands send creatorId; creators send brandId.
+      properties:
+        creatorId:
+          type: string
+          format: uuid
+        brandId:
+          type: string
+          format: uuid
+    ConversationOutput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        withParty:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        lastMessage:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+        unread:
+          type: integer
+          readOnly: true
+        updatedAt:
+          readOnly: true
+      required:
+      - id
+      - lastMessage
+      - unread
+      - updatedAt
+      - withParty
     CreatorCardOutput:
       type: object
       description: Public view. Never includes contact details, payout info, or approval
@@ -1905,10 +2179,16 @@ components:
             type: object
             additionalProperties: {}
           readOnly: true
+        gallery:
+          type: array
+          items:
+            $ref: '#/components/schemas/GalleryItemOutput'
+          readOnly: true
       required:
       - avatarUrl
       - displayName
       - followerCount
+      - gallery
       - id
       - packages
       - primaryPlatform
@@ -1971,11 +2251,17 @@ components:
           items:
             $ref: '#/components/schemas/PackageOutput'
           readOnly: true
+        gallery:
+          type: array
+          items:
+            $ref: '#/components/schemas/GalleryItemOutput'
+          readOnly: true
       required:
       - approvalStatus
       - avatarUrl
       - displayName
       - followerCount
+      - gallery
       - id
       - packages
       - primaryPlatform
@@ -1986,18 +2272,21 @@ components:
       - startingPrice
     DeliverableInputRequest:
       type: object
+      description: 'Send exactly one of: contentUrl (https link) or fileUploadId (a
+        finished `deliverable` upload).'
       properties:
         contentUrl:
           type: string
           format: uri
           minLength: 1
           maxLength: 1000
+        fileUploadId:
+          type: string
+          format: uuid
         note:
           type: string
           default: ''
           maxLength: 2000
-      required:
-      - contentUrl
     DeliverableOutput:
       type: object
       properties:
@@ -2011,6 +2300,13 @@ components:
           minimum: 0
         contentUrl:
           type: string
+          nullable: true
+          readOnly: true
+        file:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
         note:
           type: string
           maxLength: 2000
@@ -2022,9 +2318,22 @@ components:
           format: date-time
       required:
       - contentUrl
+      - file
       - id
       - submittedAt
       - version
+    DownloadUrlOutput:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+        expiresIn:
+          type: integer
+          nullable: true
+      required:
+      - expiresIn
+      - url
     DurationEnum:
       enum:
       - perpetual
@@ -2046,6 +2355,32 @@ components:
           maxLength: 4000
       required:
       - feedback
+    GalleryItemOutput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        url:
+          type: string
+          format: uri
+      required:
+      - id
+      - url
+    KindEnum:
+      enum:
+      - avatar
+      - brand_logo
+      - gallery
+      - deliverable
+      - chat_attachment
+      type: string
+      description: |-
+        * `avatar` - Avatar
+        * `brand_logo` - Brand Logo
+        * `gallery` - Gallery
+        * `deliverable` - Deliverable
+        * `chat_attachment` - Chat Attachment
     ListAddCreatorInputRequest:
       type: object
       properties:
@@ -2161,6 +2496,46 @@ components:
         * `active` - Active
         * `suspended` - Suspended
         * `deactivated` - Deactivated
+    MessageInputRequest:
+      type: object
+      properties:
+        text:
+          type: string
+          default: ''
+          maxLength: 4000
+        attachmentUploadId:
+          type: string
+          format: uuid
+    MessageOutput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        senderId:
+          type: string
+          format: uuid
+        fromMe:
+          type: boolean
+          readOnly: true
+        text:
+          type: string
+        attachment:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+        sentAt:
+          type: string
+          format: date-time
+      required:
+      - attachment
+      - fromMe
+      - id
+      - senderId
+      - sentAt
+      - text
     NotificationOutput:
       type: object
       properties:
@@ -2550,6 +2925,26 @@ components:
               nullable: true
             hasMore:
               type: boolean
+    PaginatedConversationOutputList:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationOutput'
+        error:
+          type: object
+          nullable: true
+        meta:
+          type: object
+          properties:
+            nextCursor:
+              type: string
+              nullable: true
+            hasMore:
+              type: boolean
     PaginatedCreatorCardOutputList:
       type: object
       properties:
@@ -2559,6 +2954,26 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CreatorCardOutput'
+        error:
+          type: object
+          nullable: true
+        meta:
+          type: object
+          properties:
+            nextCursor:
+              type: string
+              nullable: true
+            hasMore:
+              type: boolean
+    PaginatedMessageOutputList:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/MessageOutput'
         error:
           type: object
           nullable: true
@@ -2817,6 +3232,19 @@ components:
           type: integer
       required:
       - updated
+    RealtimeTicket:
+      type: object
+      properties:
+        ticket:
+          type: string
+        expiresIn:
+          type: integer
+        path:
+          type: string
+      required:
+      - expiresIn
+      - path
+      - ticket
     ReasonInputRequest:
       type: object
       properties:
@@ -2935,6 +3363,79 @@ components:
           type: integer
       required:
       - unread
+    UploadCreateInputRequest:
+      type: object
+      properties:
+        kind:
+          $ref: '#/components/schemas/KindEnum'
+        contentType:
+          type: string
+          minLength: 1
+          maxLength: 60
+        size:
+          type: integer
+          minimum: 1
+          description: File size in bytes
+      required:
+      - contentType
+      - kind
+      - size
+    UploadCreatedOutput:
+      type: object
+      properties:
+        upload:
+          $ref: '#/components/schemas/UploadOutput'
+        uploadUrl:
+          type: string
+          format: uri
+        method:
+          type: string
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+      required:
+      - headers
+      - method
+      - upload
+      - uploadUrl
+    UploadOutput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        kind:
+          $ref: '#/components/schemas/KindEnum'
+        status:
+          $ref: '#/components/schemas/UploadOutputStatusEnum'
+        contentType:
+          type: string
+          readOnly: true
+        size:
+          type: integer
+          readOnly: true
+        url:
+          type: string
+          nullable: true
+          readOnly: true
+      required:
+      - contentType
+      - id
+      - kind
+      - size
+      - url
+    UploadOutputStatusEnum:
+      enum:
+      - pending
+      - ready
+      - rejected
+      type: string
+      description: |-
+        * `pending` - Pending
+        * `ready` - Ready
+        * `rejected` - Rejected
     UsageRightsRequest:
       type: object
       properties:

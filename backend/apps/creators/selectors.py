@@ -11,7 +11,7 @@ def public_creators() -> QuerySet[Creator]:
     return (
         Creator.objects.filter(approval_status=ApprovalStatus.APPROVED)
         .annotate(starting_price=Min("packages__price_paise", filter=Q(packages__active=True)))
-        .prefetch_related(Prefetch("packages", queryset=active_packages, to_attr="active_packages"))
+        .prefetch_related(Prefetch("packages", queryset=active_packages, to_attr="active_packages"), "media")
     )
 
 

@@ -67,11 +67,17 @@ class CreatorCardOutput(serializers.ModelSerializer):
         return money(getattr(obj, "starting_price", None))
 
 
+class GalleryItemOutput(serializers.Serializer):
+    id = serializers.UUIDField()
+    url = serializers.URLField()
+
+
 class CreatorDetailOutput(CreatorCardOutput):
     packages = serializers.SerializerMethodField()
+    gallery = GalleryItemOutput(source="media", many=True, read_only=True)
 
     class Meta(CreatorCardOutput.Meta):
-        fields = (*CreatorCardOutput.Meta.fields, "packages")
+        fields = (*CreatorCardOutput.Meta.fields, "packages", "gallery")
 
     def get_packages(self, obj: Creator) -> list[dict[str, Any]]:
         packages = getattr(obj, "active_packages", None)
@@ -83,9 +89,10 @@ class CreatorDetailOutput(CreatorCardOutput):
 class CreatorSelfOutput(CreatorCardOutput):
     approvalStatus = serializers.CharField(source="approval_status")  # noqa: N815
     packages = PackageOutput(many=True, read_only=True)
+    gallery = GalleryItemOutput(source="media", many=True, read_only=True)
 
     class Meta(CreatorCardOutput.Meta):
-        fields = (*CreatorCardOutput.Meta.fields, "approvalStatus", "packages")
+        fields = (*CreatorCardOutput.Meta.fields, "approvalStatus", "packages", "gallery")
 
 
 class CreatorProfileInput(StrictSerializer):

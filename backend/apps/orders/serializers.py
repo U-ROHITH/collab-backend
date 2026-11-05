@@ -71,17 +71,36 @@ class OrderOutput(serializers.ModelSerializer):
 
 
 class DeliverableOutput(serializers.ModelSerializer):
-    contentUrl = serializers.CharField(source="content_url")  # noqa: N815
+    contentUrl = serializers.SerializerMethodField()  # noqa: N815
+    file = serializers.SerializerMethodField()
     submittedAt = serializers.DateTimeField(source="created_at")  # noqa: N815
 
     class Meta:
         model = Deliverable
-        fields = ("id", "version", "contentUrl", "note", "feedback", "submittedAt")
+        fields = ("id", "version", "contentUrl", "file", "note", "feedback", "submittedAt")
+
+    def get_contentUrl(self, obj: Deliverable) -> str | None:  # noqa: N802
+        return obj.content_url or None
+
+    def get_file(self, obj: Deliverable) -> dict[str, Any] | None:
+        u = obj.upload
+        if u is None:
+            return None
+        # Private file: fetch a short-lived link from GET /v1/uploads/{uploadId}/download-url/
+        return {"uploadId": str(u.id), "contentType": u.content_type, "size": u.size_bytes}
 
 
 class DeliverableInput(StrictSerializer):
-    contentUrl = HttpsURLField(max_length=1000)  # noqa: N815
+    """Send exactly one of: contentUrl (https link) or fileUploadId (a finished `deliverable` upload)."""
+
+    contentUrl = HttpsURLField(max_length=1000, required=False)  # noqa: N815
+    fileUploadId = serializers.UUIDField(required=False)  # noqa: N815
     note = serializers.CharField(max_length=2000, required=False, allow_blank=True, default="")
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        if bool(attrs.get("contentUrl")) == bool(attrs.get("fileUploadId")):
+            raise serializers.ValidationError("Send exactly one of contentUrl or fileUploadId.")
+        return attrs
 
 
 class FeedbackInput(StrictSerializer):
