@@ -1,0 +1,48 @@
+# Secrets: never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Dependencies & build
+node_modules/
+dist/
+build/
+.turbo/
+coverage/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Logs
+*.log
+
+# Django collectstatic output
+backend/staticfiles/
+
+# Python
+__pycache__/
+*.pyc
+.coverage
+.venv/
+.pytest_cache/
+.ruff_cache/
+.code-review-graph/
+
+# Virtual environment
+backend/.venv/
+
+# Media uploads (dev artefacts)
+backend/media/
+
+# Pytest cache
+.pytest_cache/
+backend/.pytest_cache/
+
+# Ruff cache
+.ruff_cache/

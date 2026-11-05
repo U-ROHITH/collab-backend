@@ -1,0 +1,40 @@
+# Render Blueprint: Dashboard → New → Blueprint → pick this repo.
+services:
+  - type: web
+    name: collab-api
+    runtime: python
+    region: singapore          # closest Render region to Supabase Mumbai
+    plan: free                 # upgrade before real users/payments (docs/01 §8)
+    rootDir: backend
+    buildCommand: pip install uv && uv sync --frozen --no-dev && uv run python manage.py collectstatic --noinput
+    startCommand: uv run python manage.py migrate --noinput && uv run gunicorn config.asgi:application -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --workers 2 --timeout 60
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.production
+      - key: DJANGO_ALLOWED_HOSTS
+        value: "*"             # TEMPORARY per founder; restrict to the real domain later
+      - key: DJANGO_SECRET_KEY
+        sync: false            # set a 64+ char value (generateValue gives 44 chars; prod requires 50+)
+      - key: JWT_SIGNING_KEY
+        generateValue: true
+      - key: DATA_ENCRYPTION_KEY
+        generateValue: true
+      - key: NUM_PROXIES
+        value: "1"
+      - key: OTP_DELIVERY
+        value: live
+      - key: DJANGO_ADMIN_URL
+        sync: false            # e.g. ops-<random>/
+      - key: DATABASE_URL
+        sync: false            # NEW Supabase project, transaction pooler (6543)
+      - key: CORS_ALLOW_ALL_ORIGINS
+        value: "true"          # TEMPORARY per founder; set exact origins later
+      - key: TWO_FACTOR_API_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM_EMAIL
+        sync: false

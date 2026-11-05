@@ -1,0 +1,4106 @@
+openapi: 3.0.3
+info:
+  title: Collab API
+  version: 1.0.0
+paths:
+  /v1/auth/email/request/:
+    post:
+      operationId: auth_email_request_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailVerificationRequestInputRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailVerificationRequestOutput'
+          description: ''
+  /v1/auth/email/verify/:
+    post:
+      operationId: auth_email_verify_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailVerificationVerifyInputRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailVerificationVerifyOutput'
+          description: ''
+  /v1/auth/logout/:
+    post:
+      operationId: auth_logout_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshInputRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /v1/auth/logout-all/:
+    post:
+      operationId: auth_logout_all_create
+      tags:
+      - auth
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /v1/auth/me/:
+    get:
+      operationId: auth_me_retrieve
+      tags:
+      - auth
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeOutput'
+          description: ''
+  /v1/auth/otp/request/:
+    post:
+      operationId: auth_otp_request_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OtpRequestInputRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OtpRequestOutput'
+          description: ''
+  /v1/auth/otp/verify/:
+    post:
+      operationId: auth_otp_verify_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OtpVerifyInputRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokensOutput'
+          description: ''
+  /v1/auth/signup/complete/:
+    post:
+      operationId: auth_signup_complete_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignupCompleteInputRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeOutput'
+          description: ''
+  /v1/auth/token/refresh/:
+    post:
+      operationId: auth_token_refresh_create
+      description: POST {refresh} -> {access, refresh, user}. Refresh tokens rotate;
+        the old one is blacklisted.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenRefresh'
+          description: ''
+  /v1/brands/me/:
+    get:
+      operationId: brands_me_retrieve
+      tags:
+      - brands
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BrandOutput'
+          description: ''
+    put:
+      operationId: brands_me_update
+      tags:
+      - brands
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BrandInputRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BrandOutput'
+          description: ''
+    patch:
+      operationId: brands_me_partial_update
+      tags:
+      - brands
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedBrandInputRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BrandOutput'
+          description: ''
+  /v1/campaigns/:
+    get:
+      operationId: campaigns_list
+      description: 'GET: brand -> its campaigns; approved creator -> open campaigns.
+        POST: brand creates.'
+      parameters:
+      - in: query
+        name: budgetMax
+        schema:
+          type: integer
+          minimum: 0
+      - in: query
+        name: budgetMax__lte
+        schema:
+          type: integer
+          minimum: 0
+      - in: query
+        name: budgetMin
+        schema:
+          type: integer
+          minimum: 0
+      - in: query
+        name: budgetMin__gte
+        schema:
+          type: integer
+          minimum: 0
+      - in: query
+        name: category
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 80
+      - in: query
+        name: city
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 100
+      - in: query
+        name: cursor
+        schema:
+          type: string
+          minLength: 1
+      - in: query
+        name: industry
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 80
+      - in: query
+        name: limit
+        schema:
+          type: integer
+          maximum: 50
+          minimum: 1
+      - in: query
+        name: location
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 100
+      - in: query
+        name: maxBudget
+        schema:
+          type: integer
+          minimum: 0
+      - in: query
+        name: minBudget
+        schema:
+          type: integer
+          minimum: 0
+      - in: query
+        name: ordering
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 50
+      - in: query
+        name: platform
+        schema:
+          enum:
+          - instagram
+          - youtube
+          - other
+          type: string
+          minLength: 1
+        description: |-
+          * `instagram` - Instagram
+          * `youtube` - YouTube
+          * `other` - Other
+      - in: query
+        name: q
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+      - in: query
+        name: search
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+      - in: query
+        name: sort
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 50
+      - in: query
+        name: status
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 20
+      - in: query
+        name: territory
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 100
+      tags:
+      - campaigns
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedCampaignOutputList'
+          description: ''
+    post:
+      operationId: campaigns_create
+      description: 'GET: brand -> its campaigns; approved creator -> open campaigns.
+        POST: brand creates.'
+      tags:
+      - campaigns
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CampaignInputRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignOutput'
+          description: ''
+  /v1/campaigns/{campaign_id}/:
+    get:
+      operationId: campaigns_retrieve
+      parameters:
+      - in: path
+        name: campaign_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - campaigns
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignOutput'
+          description: ''
+    patch:
+      operationId: campaigns_partial_update
+      parameters:
+      - in: path
+        name: campaign_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - campaigns
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedCampaignInputRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignOutput'
+          description: ''
+  /v1/campaigns/{campaign_id}/bids/:
+    get:
+      operationId: campaigns_bids_list
+      description: 'GET: brand -> all bids on its campaign; creator -> only its own
+        bid. POST: approved creator bids.'
+      parameters:
+      - in: path
+        name: campaign_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: cursor
+        required: false
+        in: query
+        description: The pagination cursor value.
+        schema:
+          type: string
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - campaigns
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedBidOutputList'
+          description: ''
+    post:
+      operationId: campaigns_bids_create
+      description: 'GET: brand -> all bids on its campaign; creator -> only its own
+        bid. POST: approved creator bids.'
+      parameters:
+      - in: path
+        name: campaign_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - campaigns
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BidInputRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BidOutput'
+          description: ''
+  /v1/campaigns/{campaign_id}/bids/{bid_id}/:
+    patch:
+      operationId: campaigns_bids_partial_update
+      parameters:
+      - in: path
+        name: bid_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: campaign_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - campaigns
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedBidInputRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BidOutput'
+          description: ''
+  /v1/campaigns/{campaign_id}/bids/{bid_id}/select/:
+    post:
+      operationId: campaigns_bids_select_create
+      parameters:
+      - in: path
+        name: bid_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: campaign_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - campaigns
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderOutput'
+          description: ''
+  /v1/campaigns/{campaign_id}/bids/{bid_id}/withdraw/:
+    post:
+      operationId: campaigns_bids_withdraw_create
+      parameters:
+      - in: path
+        name: bid_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: campaign_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - campaigns
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BidOutput'
+          description: ''
+  /v1/campaigns/{campaign_id}/close/:
+    post:
+      operationId: campaigns_close_create
+      parameters:
+      - in: path
+        name: campaign_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - campaigns
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignOutput'
+          description: ''
+  /v1/cart/:
+    get:
+      operationId: cart_list
+      tags:
+      - cart
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CartItemOutput'
+          description: ''
+    post:
+      operationId: cart_create
+      tags:
+      - cart
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CartAddInputRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartItemOutput'
+          description: ''
+  /v1/cart/{item_id}/:
+    delete:
+      operationId: cart_destroy
+      parameters:
+      - in: path
+        name: item_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - cart
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /v1/cart/checkout/:
+    post:
+      operationId: cart_checkout_create
+      tags:
+      - cart
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutInputRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OrderOutput'
+          description: ''
+  /v1/checkout/:
+    post:
+      operationId: checkout_create
+      tags:
+      - checkout
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentCheckoutInputRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutSessionOutput'
+          description: ''
+  /v1/conversations/:
+    get:
+      operationId: conversations_list
+      tags:
+      - conversations
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ConversationOutput'
+          description: ''
+    post:
+      operationId: conversations_create
+      tags:
+      - conversations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConversationInputRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationOutput'
+          description: ''
+  /v1/conversations/{conversation_id}/messages/:
+    get:
+      operationId: conversations_messages_list
+      parameters:
+      - in: path
+        name: conversation_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - conversations
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MessageOutput'
+          description: ''
+    post:
+      operationId: conversations_messages_create
+      parameters:
+      - in: path
+        name: conversation_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - conversations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MessageInputRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageOutput'
+          description: ''
+  /v1/creators/:
+    get:
+      operationId: creators_list
+      description: 'Discovery: approved creators only. Visible to signed-up brands
+        and creators.'
+      parameters:
+      - in: query
+        name: category
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 40
+      - in: query
+        name: cursor
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 500
+      - in: query
+        name: limit
+        schema:
+          type: integer
+          maximum: 50
+          minimum: 1
+      - in: query
+        name: location
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 80
+      - in: query
+        name: maxPrice
+        schema:
+          type: integer
+          minimum: 0
+      - in: query
+        name: minFollowers
+        schema:
+          type: integer
+          minimum: 0
+      - in: query
+        name: minPrice
+        schema:
+          type: integer
+          minimum: 0
+      - in: query
+        name: platform
+        schema:
+          enum:
+          - instagram
+          - youtube
+          - other
+          type: string
+          minLength: 1
+        description: |-
+          * `instagram` - Instagram
+          * `youtube` - YouTube
+          * `other` - Other
+      - in: query
+        name: q
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 100
+      - in: query
+        name: verified
+        schema:
+          type: boolean
+      tags:
+      - creators
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedCreatorCardOutputList'
+          description: ''
+  /v1/creators/{creator_id}/:
+    get:
+      operationId: creators_retrieve
+      parameters:
+      - in: path
+        name: creator_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - creators
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatorDetailOutput'
+          description: ''
+  /v1/creators/{creator_id}/reviews/:
+    get:
+      operationId: creators_reviews_list
+      parameters:
+      - in: path
+        name: creator_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: cursor
+        required: false
+        in: query
+        description: The pagination cursor value.
+        schema:
+          type: string
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - creators
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedReviewOutputList'
+          description: ''
+  /v1/creators/me/:
+    get:
+      operationId: creators_me_retrieve
+      tags:
+      - creators
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatorSelfOutput'
+          description: ''
+    post:
+      operationId: creators_me_create
+      tags:
+      - creators
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CreatorProfileInputRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CreatorProfileInputRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatorProfileInputRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatorSelfOutput'
+          description: ''
+    put:
+      operationId: creators_me_update
+      tags:
+      - creators
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CreatorProfileInputRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CreatorProfileInputRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatorProfileInputRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatorSelfOutput'
+          description: ''
+    patch:
+      operationId: creators_me_partial_update
+      tags:
+      - creators
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedCreatorProfileInputRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedCreatorProfileInputRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedCreatorProfileInputRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatorSelfOutput'
+          description: ''
+  /v1/creators/me/avatar/:
+    post:
+      operationId: creators_me_avatar_create
+      tags:
+      - creators
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UploadInputRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UploadInputRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadOutput'
+          description: ''
+  /v1/creators/me/campaigns/:
+    get:
+      operationId: creators_me_campaigns_list
+      description: 'GET: brand -> its campaigns; approved creator -> open campaigns.
+        POST: brand creates.'
+      parameters:
+      - in: query
+        name: budgetMax
+        schema:
+          type: integer
+          minimum: 0
+      - in: query
+        name: budgetMax__lte
+        schema:
+          type: integer
+          minimum: 0
+      - in: query
+        name: budgetMin
+        schema:
+          type: integer
+          minimum: 0
+      - in: query
+        name: budgetMin__gte
+        schema:
+          type: integer
+          minimum: 0
+      - in: query
+        name: category
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 80
+      - in: query
+        name: city
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 100
+      - in: query
+        name: cursor
+        schema:
+          type: string
+          minLength: 1
+      - in: query
+        name: industry
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 80
+      - in: query
+        name: limit
+        schema:
+          type: integer
+          maximum: 50
+          minimum: 1
+      - in: query
+        name: location
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 100
+      - in: query
+        name: maxBudget
+        schema:
+          type: integer
+          minimum: 0
+      - in: query
+        name: minBudget
+        schema:
+          type: integer
+          minimum: 0
+      - in: query
+        name: ordering
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 50
+      - in: query
+        name: platform
+        schema:
+          enum:
+          - instagram
+          - youtube
+          - other
+          type: string
+          minLength: 1
+        description: |-
+          * `instagram` - Instagram
+          * `youtube` - YouTube
+          * `other` - Other
+      - in: query
+        name: q
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+      - in: query
+        name: search
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+      - in: query
+        name: sort
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 50
+      - in: query
+        name: status
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 20
+      - in: query
+        name: territory
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 100
+      tags:
+      - creators
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedCampaignOutputList'
+          description: ''
+    post:
+      operationId: creators_me_campaigns_create
+      description: 'GET: brand -> its campaigns; approved creator -> open campaigns.
+        POST: brand creates.'
+      tags:
+      - creators
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CampaignInputRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignOutput'
+          description: ''
+  /v1/creators/me/offers/:
+    get:
+      operationId: creators_me_offers_list
+      parameters:
+      - name: cursor
+        required: false
+        in: query
+        description: The pagination cursor value.
+        schema:
+          type: string
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - creators
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedOfferOutputList'
+          description: ''
+  /v1/creators/me/offers/{offer_id}/:
+    patch:
+      operationId: creators_me_offers_partial_update
+      parameters:
+      - in: path
+        name: offer_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - creators
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedOfferResponseInputRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OfferResponse'
+          description: ''
+  /v1/creators/me/orders/:
+    get:
+      operationId: creators_me_orders_list
+      description: 'Brand: orders it bought. Creator: orders it fulfils. Also served
+        at /creators/me/orders/.'
+      parameters:
+      - in: query
+        name: cursor
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 500
+      - in: query
+        name: limit
+        schema:
+          type: integer
+          maximum: 50
+          minimum: 1
+      - in: query
+        name: status
+        schema:
+          enum:
+          - awaiting_payment
+          - funded
+          - draft_submitted
+          - revision_requested
+          - approved
+          - completed
+          - cancelled
+          - refund_pending
+          - refunded
+          - disputed
+          type: string
+          minLength: 1
+        description: |-
+          * `awaiting_payment` - Awaiting Payment
+          * `funded` - Funded
+          * `draft_submitted` - Draft Submitted
+          * `revision_requested` - Revision Requested
+          * `approved` - Approved
+          * `completed` - Completed
+          * `cancelled` - Cancelled
+          * `refund_pending` - Refund Pending
+          * `refunded` - Refunded
+          * `disputed` - Disputed
+      tags:
+      - creators
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedOrderOutputList'
+          description: ''
+  /v1/creators/me/packages/:
+    get:
+      operationId: creators_me_packages_list
+      tags:
+      - creators
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PackageOutput'
+          description: ''
+    post:
+      operationId: creators_me_packages_create
+      tags:
+      - creators
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PackageInputRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageOutput'
+          description: ''
+  /v1/creators/me/packages/{package_id}/:
+    patch:
+      operationId: creators_me_packages_partial_update
+      parameters:
+      - in: path
+        name: package_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - creators
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedPackageInputRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageOutput'
+          description: ''
+    delete:
+      operationId: creators_me_packages_destroy
+      parameters:
+      - in: path
+        name: package_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - creators
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /v1/creators/me/photos/:
+    post:
+      operationId: creators_me_photos_create
+      tags:
+      - creators
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UploadInputRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UploadInputRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadOutput'
+          description: ''
+  /v1/creators/me/wallet/:
+    get:
+      operationId: creators_me_wallet_retrieve
+      tags:
+      - creators
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatorWalletOutput'
+          description: ''
+  /v1/creators/me/withdrawals/:
+    post:
+      operationId: creators_me_withdrawals_create
+      tags:
+      - creators
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WithdrawalInputRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WithdrawalOutput'
+          description: ''
+  /v1/dev/orders/{order_id}/simulate-payment/:
+    post:
+      operationId: dev_orders_simulate_payment_create
+      description: 'DEV ONLY (DEBUG + DEV_ENDPOINTS_ENABLED): mark an order funded
+        until Razorpay is wired in.'
+      parameters:
+      - in: path
+        name: order_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - dev
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderOutput'
+          description: ''
+  /v1/lists/:
+    get:
+      operationId: lists_list
+      tags:
+      - lists
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ListOutput'
+          description: ''
+    post:
+      operationId: lists_create
+      tags:
+      - lists
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListInputRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListOutput'
+          description: ''
+  /v1/lists/{list_id}/:
+    get:
+      operationId: lists_retrieve
+      parameters:
+      - in: path
+        name: list_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - lists
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListDetailOutput'
+          description: ''
+    patch:
+      operationId: lists_partial_update
+      parameters:
+      - in: path
+        name: list_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - lists
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedListInputRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListDetailOutput'
+          description: ''
+    delete:
+      operationId: lists_destroy
+      parameters:
+      - in: path
+        name: list_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - lists
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /v1/lists/{list_id}/creators/:
+    post:
+      operationId: lists_creators_create
+      parameters:
+      - in: path
+        name: list_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - lists
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListAddCreatorInputRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /v1/lists/{list_id}/creators/{creator_id}/:
+    delete:
+      operationId: lists_creators_destroy
+      parameters:
+      - in: path
+        name: creator_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: list_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - lists
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /v1/notifications/:
+    get:
+      operationId: notifications_list
+      parameters:
+      - name: cursor
+        required: false
+        in: query
+        description: The pagination cursor value.
+        schema:
+          type: string
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - notifications
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedNotificationOutputList'
+          description: ''
+  /v1/notifications/{notification_id}/read/:
+    patch:
+      operationId: notifications_read_partial_update
+      parameters:
+      - in: path
+        name: notification_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - notifications
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationOutput'
+          description: ''
+  /v1/notifications/read-all/:
+    post:
+      operationId: notifications_read_all_create
+      tags:
+      - notifications
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadAll'
+          description: ''
+  /v1/notifications/unread-count/:
+    get:
+      operationId: notifications_unread_count_retrieve
+      tags:
+      - notifications
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnreadCount'
+          description: ''
+  /v1/offers/:
+    get:
+      operationId: offers_list
+      parameters:
+      - name: cursor
+        required: false
+        in: query
+        description: The pagination cursor value.
+        schema:
+          type: string
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - offers
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedOfferOutputList'
+          description: ''
+    post:
+      operationId: offers_create
+      tags:
+      - offers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OfferInputRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OfferOutput'
+          description: ''
+  /v1/offers/{offer_id}/withdraw/:
+    post:
+      operationId: offers_withdraw_create
+      parameters:
+      - in: path
+        name: offer_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - offers
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OfferOutput'
+          description: ''
+  /v1/orders/:
+    get:
+      operationId: orders_list
+      description: 'Brand: orders it bought. Creator: orders it fulfils. Also served
+        at /creators/me/orders/.'
+      parameters:
+      - in: query
+        name: cursor
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 500
+      - in: query
+        name: limit
+        schema:
+          type: integer
+          maximum: 50
+          minimum: 1
+      - in: query
+        name: status
+        schema:
+          enum:
+          - awaiting_payment
+          - funded
+          - draft_submitted
+          - revision_requested
+          - approved
+          - completed
+          - cancelled
+          - refund_pending
+          - refunded
+          - disputed
+          type: string
+          minLength: 1
+        description: |-
+          * `awaiting_payment` - Awaiting Payment
+          * `funded` - Funded
+          * `draft_submitted` - Draft Submitted
+          * `revision_requested` - Revision Requested
+          * `approved` - Approved
+          * `completed` - Completed
+          * `cancelled` - Cancelled
+          * `refund_pending` - Refund Pending
+          * `refunded` - Refunded
+          * `disputed` - Disputed
+      tags:
+      - orders
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedOrderOutputList'
+          description: ''
+  /v1/orders/{order_id}/:
+    get:
+      operationId: orders_retrieve
+      parameters:
+      - in: path
+        name: order_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - orders
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderOutput'
+          description: ''
+  /v1/orders/{order_id}/approve/:
+    post:
+      operationId: orders_approve_create
+      parameters:
+      - in: path
+        name: order_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - orders
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderOutput'
+          description: ''
+  /v1/orders/{order_id}/cancel/:
+    post:
+      operationId: orders_cancel_create
+      parameters:
+      - in: path
+        name: order_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - orders
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReasonInputRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderOutput'
+          description: ''
+  /v1/orders/{order_id}/deliverables/:
+    get:
+      operationId: orders_deliverables_list
+      parameters:
+      - in: path
+        name: order_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - orders
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DeliverableOutput'
+          description: ''
+    post:
+      operationId: orders_deliverables_create
+      parameters:
+      - in: path
+        name: order_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - orders
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeliverableInputRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliverableOutput'
+          description: ''
+  /v1/orders/{order_id}/disputes/:
+    post:
+      operationId: orders_disputes_create
+      parameters:
+      - in: path
+        name: order_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - orders
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReasonInputRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderOutput'
+          description: ''
+  /v1/orders/{order_id}/review/:
+    post:
+      operationId: orders_review_create
+      parameters:
+      - in: path
+        name: order_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - orders
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewInputRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewOutput'
+          description: ''
+  /v1/orders/{order_id}/revisions/:
+    post:
+      operationId: orders_revisions_create
+      parameters:
+      - in: path
+        name: order_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - orders
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedbackInputRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderOutput'
+          description: ''
+  /v1/payments/verify/:
+    post:
+      operationId: payments_verify_create
+      tags:
+      - payments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentVerifyInputRequest'
+      security:
+      - bearerAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentReceiptOutput'
+          description: ''
+  /v1/payouts/:
+    get:
+      operationId: payouts_retrieve
+      tags:
+      - payouts
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatorWalletOutput'
+          description: ''
+  /v1/uploads/:
+    post:
+      operationId: uploads_create
+      tags:
+      - uploads
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UploadInputRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UploadInputRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadOutput'
+          description: ''
+components:
+  schemas:
+    AuthTokensOutput:
+      type: object
+      properties:
+        access:
+          type: string
+        refresh:
+          type: string
+        user:
+          $ref: '#/components/schemas/MeOutput'
+      required:
+      - access
+      - refresh
+      - user
+    BidInputRequest:
+      type: object
+      properties:
+        price:
+          type: integer
+          maximum: 1000000000
+          minimum: 100
+        message:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        expectedViews:
+          type: integer
+          minimum: 0
+          nullable: true
+        deliveryDays:
+          type: integer
+          maximum: 90
+          minimum: 1
+      required:
+      - deliveryDays
+      - message
+      - price
+    BidOutput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        campaignId:
+          type: string
+          format: uuid
+        creator:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        price:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+        message:
+          type: string
+          maxLength: 2000
+        expectedViews:
+          type: integer
+        deliveryDays:
+          type: integer
+        status:
+          $ref: '#/components/schemas/BidOutputStatusEnum'
+        version:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
+      required:
+      - campaignId
+      - createdAt
+      - creator
+      - deliveryDays
+      - expectedViews
+      - id
+      - message
+      - price
+    BidOutputStatusEnum:
+      enum:
+      - pending
+      - selected
+      - rejected
+      - withdrawn
+      type: string
+      description: |-
+        * `pending` - Pending
+        * `selected` - Selected
+        * `rejected` - Rejected
+        * `withdrawn` - Withdrawn
+    BillingAddressInputRequest:
+      type: object
+      properties:
+        line1:
+          type: string
+          minLength: 1
+          maxLength: 200
+        line2:
+          type: string
+          maxLength: 200
+        city:
+          type: string
+          minLength: 1
+          maxLength: 80
+        state:
+          type: string
+          minLength: 1
+          maxLength: 80
+        pincode:
+          type: string
+          minLength: 1
+          pattern: ^[1-9][0-9]{5}$
+      required:
+      - city
+      - line1
+      - pincode
+      - state
+    BlankEnum:
+      enum:
+      - ''
+    BrandInputRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        website:
+          oneOf:
+          - type: string
+            format: uri
+            maxLength: 300
+          - type: string
+            maxLength: 0
+        industry:
+          type: string
+          maxLength: 80
+        category:
+          type: string
+          maxLength: 80
+        legalName:
+          type: string
+          maxLength: 200
+        gstin:
+          oneOf:
+          - type: string
+            pattern: ^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$
+          - type: string
+            maxLength: 0
+        stateCode:
+          oneOf:
+          - type: string
+            pattern: ^[0-9]{2}$
+          - type: string
+            maxLength: 0
+        billingAddress:
+          $ref: '#/components/schemas/BillingAddressInputRequest'
+    BrandOutput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 120
+        website:
+          oneOf:
+          - type: string
+            format: uri
+            maxLength: 300
+          - type: string
+            maxLength: 0
+        industry:
+          type: string
+          maxLength: 80
+        category:
+          type: string
+          readOnly: true
+        logoUrl:
+          type: string
+        legalName:
+          type: string
+        gstin:
+          type: string
+          maxLength: 15
+        stateCode:
+          type: string
+        billingAddress: {}
+      required:
+      - billingAddress
+      - category
+      - id
+      - legalName
+      - logoUrl
+      - name
+      - stateCode
+    CampaignInputRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        brief:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        platform:
+          $ref: '#/components/schemas/PlatformEnum'
+        deliverables:
+          type: string
+          minLength: 1
+          maxLength: 200
+        budgetMin:
+          type: integer
+          maximum: 1000000000
+          minimum: 100
+        budgetMax:
+          type: integer
+          maximum: 1000000000
+          minimum: 100
+        closesAt:
+          type: string
+          format: date-time
+        status:
+          allOf:
+          - $ref: '#/components/schemas/CampaignInputStatusEnum'
+          default: open
+        usageRights:
+          $ref: '#/components/schemas/UsageRightsRequest'
+      required:
+      - brief
+      - budgetMax
+      - budgetMin
+      - closesAt
+      - deliverables
+      - platform
+      - title
+      - usageRights
+    CampaignInputStatusEnum:
+      enum:
+      - draft
+      - open
+      type: string
+      description: |-
+        * `draft` - draft
+        * `open` - open
+    CampaignOutput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        title:
+          type: string
+          maxLength: 200
+        brief:
+          type: string
+          maxLength: 5000
+        platform:
+          $ref: '#/components/schemas/PlatformEnum'
+        deliverables:
+          type: string
+          maxLength: 200
+        budgetMin:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+        budgetMax:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+        closesAt:
+          type: string
+          format: date-time
+        status:
+          $ref: '#/components/schemas/CampaignOutputStatusEnum'
+        usageRights: {}
+        brand:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+      - brand
+      - brief
+      - budgetMax
+      - budgetMin
+      - closesAt
+      - createdAt
+      - deliverables
+      - id
+      - platform
+      - title
+      - usageRights
+    CampaignOutputStatusEnum:
+      enum:
+      - draft
+      - open
+      - closed
+      - cancelled
+      type: string
+      description: |-
+        * `draft` - Draft
+        * `open` - Open
+        * `closed` - Closed
+        * `cancelled` - Cancelled
+    CartAddInputRequest:
+      type: object
+      properties:
+        packageId:
+          type: string
+          format: uuid
+        brief:
+          type: string
+          default: ''
+          maxLength: 2000
+      required:
+      - packageId
+    CartItemOutput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        package:
+          $ref: '#/components/schemas/PackageOutput'
+        creator:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        brief:
+          type: string
+          maxLength: 2000
+      required:
+      - creator
+      - id
+      - package
+    ChannelEnum:
+      enum:
+      - sms
+      - email
+      type: string
+      description: |-
+        * `sms` - SMS
+        * `email` - Email
+    ChannelsEnum:
+      enum:
+      - paid_ads
+      - organic_social
+      - website
+      type: string
+      description: |-
+        * `paid_ads` - paid_ads
+        * `organic_social` - organic_social
+        * `website` - website
+    CheckoutInputRequest:
+      type: object
+      properties:
+        usageRights:
+          $ref: '#/components/schemas/UsageRightsRequest'
+      required:
+      - usageRights
+    CheckoutSessionOutput:
+      type: object
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        gateway:
+          type: string
+        orderId:
+          type: string
+        amount:
+          type: object
+          additionalProperties: {}
+        amountPaise:
+          type: integer
+        currency:
+          type: string
+        key:
+          type: string
+        brand:
+          type: object
+          additionalProperties: {}
+        orders:
+          type: array
+          items:
+            type: string
+      required:
+      - amount
+      - amountPaise
+      - brand
+      - currency
+      - gateway
+      - key
+      - orderId
+      - orders
+      - sessionId
+    ConversationInputRequest:
+      type: object
+      properties:
+        creatorId:
+          type: string
+          format: uuid
+        brandId:
+          type: string
+          format: uuid
+        recipientId:
+          type: string
+          format: uuid
+        creator:
+          type: string
+          format: uuid
+        brand:
+          type: string
+          format: uuid
+        content:
+          type: string
+          maxLength: 5000
+        message:
+          type: string
+          maxLength: 5000
+    ConversationOutput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        brand:
+          allOf:
+          - $ref: '#/components/schemas/ConversationParticipantBrandOutput'
+          readOnly: true
+        creator:
+          allOf:
+          - $ref: '#/components/schemas/ConversationParticipantCreatorOutput'
+          readOnly: true
+        lastMessage:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+        unreadCount:
+          type: integer
+          readOnly: true
+        lastMessageAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+      - brand
+      - createdAt
+      - creator
+      - id
+      - lastMessage
+      - lastMessageAt
+      - unreadCount
+      - updatedAt
+    ConversationParticipantBrandOutput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 120
+        logoUrl:
+          type: string
+      required:
+      - id
+      - name
+    ConversationParticipantCreatorOutput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        displayName:
+          type: string
+        avatarUrl:
+          type: string
+          nullable: true
+          readOnly: true
+      required:
+      - avatarUrl
+      - displayName
+      - id
+    CreatorCardOutput:
+      type: object
+      description: Public view. Never includes contact details, payout info, or approval
+        internals.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        slug:
+          type: string
+          maxLength: 90
+          pattern: ^[-a-zA-Z0-9_]+$
+        displayName:
+          type: string
+        bio:
+          type: string
+          maxLength: 2000
+        categories:
+          type: array
+          items:
+            type: string
+            maxLength: 40
+          maxItems: 5
+        location:
+          type: string
+          maxLength: 80
+        primaryPlatform:
+          type: string
+        repliesWithin:
+          type: string
+        verified:
+          type: boolean
+        followerCount:
+          type: integer
+        avatarUrl:
+          type: string
+          nullable: true
+          readOnly: true
+        profilePicture:
+          type: string
+          nullable: true
+          readOnly: true
+        socialMediaUrls:
+          readOnly: true
+        rating:
+          type: number
+          format: double
+        reviewCount:
+          type: integer
+        startingPrice:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+      required:
+      - avatarUrl
+      - displayName
+      - followerCount
+      - id
+      - primaryPlatform
+      - profilePicture
+      - rating
+      - repliesWithin
+      - reviewCount
+      - slug
+      - socialMediaUrls
+      - startingPrice
+    CreatorDetailOutput:
+      type: object
+      description: Public view. Never includes contact details, payout info, or approval
+        internals.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        slug:
+          type: string
+          maxLength: 90
+          pattern: ^[-a-zA-Z0-9_]+$
+        displayName:
+          type: string
+        bio:
+          type: string
+          maxLength: 2000
+        categories:
+          type: array
+          items:
+            type: string
+            maxLength: 40
+          maxItems: 5
+        location:
+          type: string
+          maxLength: 80
+        primaryPlatform:
+          type: string
+        repliesWithin:
+          type: string
+        verified:
+          type: boolean
+        followerCount:
+          type: integer
+        avatarUrl:
+          type: string
+          nullable: true
+          readOnly: true
+        profilePicture:
+          type: string
+          nullable: true
+          readOnly: true
+        socialMediaUrls:
+          readOnly: true
+        rating:
+          type: number
+          format: double
+        reviewCount:
+          type: integer
+        startingPrice:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+        packages:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+          readOnly: true
+      required:
+      - avatarUrl
+      - displayName
+      - followerCount
+      - id
+      - packages
+      - primaryPlatform
+      - profilePicture
+      - rating
+      - repliesWithin
+      - reviewCount
+      - slug
+      - socialMediaUrls
+      - startingPrice
+    CreatorProfileInputRequest:
+      type: object
+      properties:
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        bio:
+          type: string
+          maxLength: 2000
+        categories:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 40
+          maxItems: 5
+        location:
+          type: string
+          maxLength: 80
+        primaryPlatform:
+          $ref: '#/components/schemas/PlatformEnum'
+        repliesWithin:
+          $ref: '#/components/schemas/RepliesWithinEnum'
+        socialMediaUrls: {}
+        profilePicture:
+          type: string
+          format: binary
+          nullable: true
+        avatar:
+          type: string
+          format: binary
+          nullable: true
+        avatarUrl:
+          oneOf:
+          - type: string
+            format: uri
+          - type: string
+            maxLength: 0
+    CreatorSelfOutput:
+      type: object
+      description: Public view. Never includes contact details, payout info, or approval
+        internals.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        slug:
+          type: string
+          maxLength: 90
+          pattern: ^[-a-zA-Z0-9_]+$
+        displayName:
+          type: string
+        bio:
+          type: string
+          maxLength: 2000
+        categories:
+          type: array
+          items:
+            type: string
+            maxLength: 40
+          maxItems: 5
+        location:
+          type: string
+          maxLength: 80
+        primaryPlatform:
+          type: string
+        repliesWithin:
+          type: string
+        verified:
+          type: boolean
+        followerCount:
+          type: integer
+        avatarUrl:
+          type: string
+          nullable: true
+          readOnly: true
+        profilePicture:
+          type: string
+          nullable: true
+          readOnly: true
+        socialMediaUrls:
+          readOnly: true
+        rating:
+          type: number
+          format: double
+        reviewCount:
+          type: integer
+        startingPrice:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+        approvalStatus:
+          type: string
+        packages:
+          type: array
+          items:
+            $ref: '#/components/schemas/PackageOutput'
+          readOnly: true
+      required:
+      - approvalStatus
+      - avatarUrl
+      - displayName
+      - followerCount
+      - id
+      - packages
+      - primaryPlatform
+      - profilePicture
+      - rating
+      - repliesWithin
+      - reviewCount
+      - slug
+      - socialMediaUrls
+      - startingPrice
+    CreatorWalletOutput:
+      type: object
+      properties:
+        balance:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+        availableBalance:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+        pendingBalance:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+        totalEarned:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+        totalWithdrawn:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletTransactionOutput'
+      required:
+      - availableBalance
+      - balance
+      - pendingBalance
+      - totalEarned
+      - totalWithdrawn
+      - transactions
+    DeliverableInputRequest:
+      type: object
+      properties:
+        contentUrl:
+          type: string
+          format: uri
+          minLength: 1
+          maxLength: 1000
+        note:
+          type: string
+          default: ''
+          maxLength: 2000
+      required:
+      - contentUrl
+    DeliverableOutput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        version:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        contentUrl:
+          type: string
+        note:
+          type: string
+          maxLength: 2000
+        feedback:
+          type: string
+          maxLength: 4000
+        submittedAt:
+          type: string
+          format: date-time
+      required:
+      - contentUrl
+      - id
+      - submittedAt
+      - version
+    DurationEnum:
+      enum:
+      - perpetual
+      - 12m
+      - 6m
+      - 3m
+      type: string
+      description: |-
+        * `perpetual` - perpetual
+        * `12m` - 12m
+        * `6m` - 6m
+        * `3m` - 3m
+    EmailVerificationRequestInputRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+      required:
+      - email
+    EmailVerificationRequestOutput:
+      type: object
+      properties:
+        challengeId:
+          type: string
+          format: uuid
+        expiresIn:
+          type: integer
+      required:
+      - challengeId
+    EmailVerificationVerifyInputRequest:
+      type: object
+      properties:
+        challengeId:
+          type: string
+          format: uuid
+        code:
+          type: string
+          minLength: 1
+          pattern: ^\d{6}$
+      required:
+      - challengeId
+      - code
+    EmailVerificationVerifyOutput:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        emailVerified:
+          type: boolean
+      required:
+      - email
+      - emailVerified
+    FeedbackInputRequest:
+      type: object
+      properties:
+        feedback:
+          type: string
+          minLength: 1
+          maxLength: 4000
+      required:
+      - feedback
+    ListAddCreatorInputRequest:
+      type: object
+      properties:
+        creatorId:
+          type: string
+          format: uuid
+      required:
+      - creatorId
+    ListDetailOutput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 80
+        creators:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+          readOnly: true
+      required:
+      - creators
+      - id
+      - name
+    ListInputRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+      required:
+      - name
+    ListOutput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 80
+        creatorCount:
+          type: integer
+          readOnly: true
+      required:
+      - creatorCount
+      - id
+      - name
+    MeOutput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        email:
+          nullable: true
+          oneOf:
+          - type: string
+            format: email
+            maxLength: 254
+          - type: string
+            maxLength: 0
+        emailVerified:
+          type: boolean
+        phone:
+          type: string
+          nullable: true
+          maxLength: 16
+        fullName:
+          type: string
+        role:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/MeOutputRoleEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        status:
+          $ref: '#/components/schemas/MeOutputStatusEnum'
+        needsOnboarding:
+          type: boolean
+          readOnly: true
+        profileId:
+          type: string
+          nullable: true
+          readOnly: true
+      required:
+      - emailVerified
+      - fullName
+      - id
+      - needsOnboarding
+      - profileId
+    MeOutputRoleEnum:
+      enum:
+      - brand
+      - creator
+      - admin
+      type: string
+      description: |-
+        * `brand` - Brand
+        * `creator` - Creator
+        * `admin` - Admin
+    MeOutputStatusEnum:
+      enum:
+      - active
+      - suspended
+      - deactivated
+      type: string
+      description: |-
+        * `active` - Active
+        * `suspended` - Suspended
+        * `deactivated` - Deactivated
+    MessageInputRequest:
+      type: object
+      properties:
+        content:
+          type: string
+          maxLength: 5000
+        message:
+          type: string
+          maxLength: 5000
+        text:
+          type: string
+          maxLength: 5000
+    MessageOutput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        conversationId:
+          type: string
+          format: uuid
+        senderId:
+          type: string
+          format: uuid
+        senderRole:
+          type: string
+        content:
+          type: string
+          maxLength: 5000
+        isRead:
+          type: boolean
+        readAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+      required:
+      - content
+      - conversationId
+      - createdAt
+      - id
+      - isRead
+      - readAt
+      - senderId
+      - senderRole
+    NotificationOutput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        type:
+          type: string
+          maxLength: 40
+        title:
+          type: string
+          maxLength: 200
+        body:
+          type: string
+          maxLength: 1000
+        data: {}
+        read:
+          type: boolean
+          readOnly: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+      - createdAt
+      - id
+      - read
+      - title
+      - type
+    NullEnum:
+      enum:
+      - null
+    OfferInputRequest:
+      type: object
+      properties:
+        creatorId:
+          type: string
+          format: uuid
+        deliverable:
+          type: string
+          minLength: 1
+          maxLength: 200
+        budget:
+          type: integer
+          maximum: 1000000000
+          minimum: 100
+        deadline:
+          type: string
+          format: date-time
+        message:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        usageRights:
+          $ref: '#/components/schemas/UsageRightsRequest'
+      required:
+      - budget
+      - creatorId
+      - deadline
+      - deliverable
+      - message
+      - usageRights
+    OfferOutput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        brand:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        creator:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        deliverable:
+          type: string
+          maxLength: 200
+        budget:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+        deadline:
+          type: string
+          format: date-time
+        message:
+          type: string
+          maxLength: 2000
+        usageRights: {}
+        status:
+          $ref: '#/components/schemas/OfferOutputStatusEnum'
+        createdAt:
+          type: string
+          format: date-time
+      required:
+      - brand
+      - budget
+      - createdAt
+      - creator
+      - deadline
+      - deliverable
+      - id
+      - message
+      - usageRights
+    OfferOutputStatusEnum:
+      enum:
+      - pending
+      - accepted
+      - rejected
+      - withdrawn
+      - expired
+      type: string
+      description: |-
+        * `pending` - Pending
+        * `accepted` - Accepted
+        * `rejected` - Rejected
+        * `withdrawn` - Withdrawn
+        * `expired` - Expired
+    OfferResponse:
+      type: object
+      properties:
+        offer:
+          $ref: '#/components/schemas/OfferOutput'
+        order:
+          allOf:
+          - $ref: '#/components/schemas/OrderOutput'
+          nullable: true
+      required:
+      - offer
+      - order
+    OfferResponseInputStatusEnum:
+      enum:
+      - accepted
+      - rejected
+      type: string
+      description: |-
+        * `accepted` - accepted
+        * `rejected` - rejected
+    OrderOutput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        status:
+          $ref: '#/components/schemas/OrderOutputStatusEnum'
+        version:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        title:
+          type: string
+          maxLength: 200
+        deliverables:
+          type: string
+          maxLength: 200
+        brief:
+          type: string
+          maxLength: 4000
+        brand:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        creator:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        amounts:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        usageRights: {}
+        sourceType:
+          type: string
+        deliveryDays:
+          type: integer
+        deadline:
+          type: string
+          format: date-time
+          nullable: true
+        revisionCount:
+          type: integer
+        maxRevisions:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        fundedAt:
+          type: string
+          format: date-time
+        approvedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        allowedActions:
+          type: array
+          items:
+            type: string
+          readOnly: true
+      required:
+      - allowedActions
+      - amounts
+      - approvedAt
+      - brand
+      - completedAt
+      - createdAt
+      - creator
+      - deliverables
+      - deliveryDays
+      - fundedAt
+      - id
+      - maxRevisions
+      - revisionCount
+      - sourceType
+      - title
+      - usageRights
+    OrderOutputStatusEnum:
+      enum:
+      - awaiting_payment
+      - funded
+      - draft_submitted
+      - revision_requested
+      - approved
+      - completed
+      - cancelled
+      - refund_pending
+      - refunded
+      - disputed
+      type: string
+      description: |-
+        * `awaiting_payment` - Awaiting Payment
+        * `funded` - Funded
+        * `draft_submitted` - Draft Submitted
+        * `revision_requested` - Revision Requested
+        * `approved` - Approved
+        * `completed` - Completed
+        * `cancelled` - Cancelled
+        * `refund_pending` - Refund Pending
+        * `refunded` - Refunded
+        * `disputed` - Disputed
+    OtpRequestInputRequest:
+      type: object
+      properties:
+        channel:
+          $ref: '#/components/schemas/ChannelEnum'
+        destination:
+          type: string
+          minLength: 1
+          maxLength: 254
+      required:
+      - channel
+      - destination
+    OtpRequestOutput:
+      type: object
+      properties:
+        challengeId:
+          type: string
+          format: uuid
+        expiresIn:
+          type: integer
+      required:
+      - challengeId
+      - expiresIn
+    OtpVerifyInputRequest:
+      type: object
+      properties:
+        challengeId:
+          type: string
+          format: uuid
+        code:
+          type: string
+          minLength: 1
+          pattern: ^\d{6}$
+      required:
+      - challengeId
+      - code
+    PackageInputRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 2000
+        platform:
+          $ref: '#/components/schemas/PlatformEnum'
+        deliverables:
+          type: string
+          minLength: 1
+          maxLength: 200
+        price:
+          type: integer
+          maximum: 1000000000
+          minimum: 100
+          description: Integer paise
+        deliveryDays:
+          type: integer
+          maximum: 90
+          minimum: 1
+        active:
+          type: boolean
+      required:
+      - deliverables
+      - deliveryDays
+      - platform
+      - price
+      - title
+    PackageOutput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        title:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 2000
+        platform:
+          $ref: '#/components/schemas/PlatformEnum'
+        deliverables:
+          type: string
+          maxLength: 200
+        price:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+        deliveryDays:
+          type: integer
+        active:
+          type: boolean
+      required:
+      - deliverables
+      - deliveryDays
+      - id
+      - platform
+      - price
+      - title
+    PaginatedBidOutputList:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/BidOutput'
+        error:
+          type: object
+          nullable: true
+        meta:
+          type: object
+          properties:
+            nextCursor:
+              type: string
+              nullable: true
+            hasMore:
+              type: boolean
+    PaginatedCampaignOutputList:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/CampaignOutput'
+        error:
+          type: object
+          nullable: true
+        meta:
+          type: object
+          properties:
+            nextCursor:
+              type: string
+              nullable: true
+            hasMore:
+              type: boolean
+    PaginatedCreatorCardOutputList:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreatorCardOutput'
+        error:
+          type: object
+          nullable: true
+        meta:
+          type: object
+          properties:
+            nextCursor:
+              type: string
+              nullable: true
+            hasMore:
+              type: boolean
+    PaginatedNotificationOutputList:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationOutput'
+        error:
+          type: object
+          nullable: true
+        meta:
+          type: object
+          properties:
+            nextCursor:
+              type: string
+              nullable: true
+            hasMore:
+              type: boolean
+    PaginatedOfferOutputList:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OfferOutput'
+        error:
+          type: object
+          nullable: true
+        meta:
+          type: object
+          properties:
+            nextCursor:
+              type: string
+              nullable: true
+            hasMore:
+              type: boolean
+    PaginatedOrderOutputList:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderOutput'
+        error:
+          type: object
+          nullable: true
+        meta:
+          type: object
+          properties:
+            nextCursor:
+              type: string
+              nullable: true
+            hasMore:
+              type: boolean
+    PaginatedReviewOutputList:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReviewOutput'
+        error:
+          type: object
+          nullable: true
+        meta:
+          type: object
+          properties:
+            nextCursor:
+              type: string
+              nullable: true
+            hasMore:
+              type: boolean
+    PatchedBidInputRequest:
+      type: object
+      properties:
+        price:
+          type: integer
+          maximum: 1000000000
+          minimum: 100
+        message:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        expectedViews:
+          type: integer
+          minimum: 0
+          nullable: true
+        deliveryDays:
+          type: integer
+          maximum: 90
+          minimum: 1
+    PatchedBrandInputRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        website:
+          oneOf:
+          - type: string
+            format: uri
+            maxLength: 300
+          - type: string
+            maxLength: 0
+        industry:
+          type: string
+          maxLength: 80
+        category:
+          type: string
+          maxLength: 80
+        legalName:
+          type: string
+          maxLength: 200
+        gstin:
+          oneOf:
+          - type: string
+            pattern: ^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$
+          - type: string
+            maxLength: 0
+        stateCode:
+          oneOf:
+          - type: string
+            pattern: ^[0-9]{2}$
+          - type: string
+            maxLength: 0
+        billingAddress:
+          $ref: '#/components/schemas/BillingAddressInputRequest'
+    PatchedCampaignInputRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        brief:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        platform:
+          $ref: '#/components/schemas/PlatformEnum'
+        deliverables:
+          type: string
+          minLength: 1
+          maxLength: 200
+        budgetMin:
+          type: integer
+          maximum: 1000000000
+          minimum: 100
+        budgetMax:
+          type: integer
+          maximum: 1000000000
+          minimum: 100
+        closesAt:
+          type: string
+          format: date-time
+        status:
+          allOf:
+          - $ref: '#/components/schemas/CampaignInputStatusEnum'
+          default: open
+        usageRights:
+          $ref: '#/components/schemas/UsageRightsRequest'
+    PatchedCreatorProfileInputRequest:
+      type: object
+      properties:
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        bio:
+          type: string
+          maxLength: 2000
+        categories:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 40
+          maxItems: 5
+        location:
+          type: string
+          maxLength: 80
+        primaryPlatform:
+          $ref: '#/components/schemas/PlatformEnum'
+        repliesWithin:
+          $ref: '#/components/schemas/RepliesWithinEnum'
+        socialMediaUrls: {}
+        profilePicture:
+          type: string
+          format: binary
+          nullable: true
+        avatar:
+          type: string
+          format: binary
+          nullable: true
+        avatarUrl:
+          oneOf:
+          - type: string
+            format: uri
+          - type: string
+            maxLength: 0
+    PatchedListInputRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+    PatchedOfferResponseInputRequest:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/OfferResponseInputStatusEnum'
+    PatchedPackageInputRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 2000
+        platform:
+          $ref: '#/components/schemas/PlatformEnum'
+        deliverables:
+          type: string
+          minLength: 1
+          maxLength: 200
+        price:
+          type: integer
+          maximum: 1000000000
+          minimum: 100
+          description: Integer paise
+        deliveryDays:
+          type: integer
+          maximum: 90
+          minimum: 1
+        active:
+          type: boolean
+    PaymentCheckoutInputRequest:
+      type: object
+      properties:
+        orderId:
+          type: string
+          format: uuid
+        packageId:
+          type: string
+          format: uuid
+        cart:
+          type: boolean
+          default: false
+        currency:
+          type: string
+          minLength: 1
+          default: INR
+          maxLength: 3
+    PaymentReceiptOutput:
+      type: object
+      properties:
+        receiptId:
+          type: string
+          format: uuid
+        receiptNumber:
+          type: string
+        orderId:
+          type: string
+          format: uuid
+        amount:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+        status:
+          type: string
+          maxLength: 24
+        paymentId:
+          type: string
+        paidAt:
+          type: string
+          format: date-time
+      required:
+      - amount
+      - orderId
+      - paidAt
+      - paymentId
+      - receiptId
+      - receiptNumber
+    PaymentVerifyInputRequest:
+      type: object
+      properties:
+        orderId:
+          type: string
+          minLength: 1
+        paymentId:
+          type: string
+          minLength: 1
+        signature:
+          type: string
+        razorpayOrderId:
+          type: string
+          minLength: 1
+        razorpayPaymentId:
+          type: string
+          minLength: 1
+        razorpaySignature:
+          type: string
+        event:
+          type: string
+          minLength: 1
+        payload: {}
+    PayoutMethodEnum:
+      enum:
+      - upi
+      - bank_transfer
+      type: string
+      description: |-
+        * `upi` - upi
+        * `bank_transfer` - bank_transfer
+    PlatformEnum:
+      enum:
+      - instagram
+      - youtube
+      - other
+      type: string
+      description: |-
+        * `instagram` - Instagram
+        * `youtube` - YouTube
+        * `other` - Other
+    ReadAll:
+      type: object
+      properties:
+        updated:
+          type: integer
+      required:
+      - updated
+    ReasonInputRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 2000
+      required:
+      - reason
+    RefreshInputRequest:
+      type: object
+      properties:
+        refresh:
+          type: string
+          minLength: 1
+      required:
+      - refresh
+    RepliesWithinEnum:
+      enum:
+      - 1h
+      - 6h
+      - 24h
+      - 3d
+      type: string
+      description: |-
+        * `1h` - 1 hour
+        * `6h` - 6 hours
+        * `24h` - 24 hours
+        * `3d` - 3 days
+    ReviewInputRequest:
+      type: object
+      properties:
+        stars:
+          type: integer
+          maximum: 5
+          minimum: 1
+        text:
+          type: string
+          default: ''
+          maxLength: 2000
+      required:
+      - stars
+    ReviewOutput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        stars:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        text:
+          type: string
+          maxLength: 2000
+        brandName:
+          type: string
+        date:
+          type: string
+          format: date-time
+      required:
+      - brandName
+      - date
+      - id
+      - stars
+    SignupCompleteInputRequest:
+      type: object
+      properties:
+        role:
+          $ref: '#/components/schemas/SignupCompleteInputRoleEnum'
+        fullName:
+          type: string
+          minLength: 1
+          maxLength: 120
+        brandName:
+          type: string
+          maxLength: 120
+        displayName:
+          type: string
+          maxLength: 80
+      required:
+      - fullName
+      - role
+    SignupCompleteInputRoleEnum:
+      enum:
+      - brand
+      - creator
+      type: string
+      description: |-
+        * `brand` - brand
+        * `creator` - creator
+    TokenRefresh:
+      type: object
+      properties:
+        access:
+          type: string
+          readOnly: true
+        refresh:
+          type: string
+      required:
+      - access
+      - refresh
+    TokenRefreshRequest:
+      type: object
+      properties:
+        refresh:
+          type: string
+          minLength: 1
+      required:
+      - refresh
+    UnreadCount:
+      type: object
+      properties:
+        unread:
+          type: integer
+      required:
+      - unread
+    UploadInputRequest:
+      type: object
+      properties:
+        file:
+          type: string
+          format: binary
+        avatar:
+          type: string
+          format: binary
+        profilePicture:
+          type: string
+          format: binary
+        kind:
+          type: string
+          minLength: 1
+          default: avatar
+          maxLength: 40
+    UploadOutput:
+      type: object
+      properties:
+        url:
+          type: string
+        avatarUrl:
+          type: string
+        kind:
+          type: string
+        filename:
+          type: string
+        size:
+          type: integer
+        contentType:
+          type: string
+      required:
+      - avatarUrl
+      - filename
+      - kind
+      - size
+      - url
+    UsageRightsRequest:
+      type: object
+      properties:
+        duration:
+          $ref: '#/components/schemas/DurationEnum'
+        channels:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelsEnum'
+          maxItems: 3
+        exclusivity:
+          type: boolean
+        exclusivityCategory:
+          type: string
+          maxLength: 80
+        territory:
+          type: string
+          minLength: 1
+          maxLength: 80
+        city:
+          type: string
+          maxLength: 80
+      required:
+      - channels
+      - duration
+      - exclusivity
+      - territory
+    WalletTransactionOutput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        type:
+          type: string
+          maxLength: 32
+        amount:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+        balanceAfter:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+        description:
+          type: string
+          maxLength: 255
+        createdAt:
+          type: string
+          format: date-time
+      required:
+      - amount
+      - balanceAfter
+      - createdAt
+      - description
+      - id
+      - type
+    WithdrawalInputRequest:
+      type: object
+      properties:
+        amount:
+          type: integer
+          maximum: 1000000000
+          minimum: 100
+        amountPaise:
+          type: integer
+          minimum: 1
+        payoutMethod:
+          $ref: '#/components/schemas/PayoutMethodEnum'
+        payoutDetails: {}
+      required:
+      - payoutDetails
+      - payoutMethod
+    WithdrawalOutput:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        amount:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+        payoutMethod:
+          type: string
+        payoutDetails: {}
+        status:
+          type: string
+          maxLength: 24
+        createdAt:
+          type: string
+          format: date-time
+      required:
+      - amount
+      - createdAt
+      - id
+      - payoutDetails
+      - payoutMethod
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

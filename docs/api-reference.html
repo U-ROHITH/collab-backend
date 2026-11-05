@@ -1,0 +1,431 @@
+<title>Collab API v1</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: sticky left index + single reading column of endpoint groups; stacks to one column on phones */
+:root {
+  --bg: #f7f7f4;
+  --surface: #ffffff;
+  --ink: #1d2027;
+  --muted: #5d6270;
+  --line: #e2e2dc;
+  --accent: #3b4cca;
+  --code-bg: #f0f0ea;
+  --get: #0f7b6c;   --get-bg: #e2f3ef;
+  --post: #3b4cca;  --post-bg: #e7e9fb;
+  --patch: #a35d00; --patch-bg: #fbefdc;
+  --del: #b42f2f;   --del-bg: #fbe5e3;
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14161b; --surface: #1b1e25; --ink: #e8e9ee; --muted: #9da2b0; --line: #2c3039;
+    --accent: #8f9bff; --code-bg: #22262f;
+    --get: #5fd3bf; --get-bg: #163a35; --post: #9aa5ff; --post-bg: #252b55;
+    --patch: #f2b25c; --patch-bg: #3d2e17; --del: #ff8f86; --del-bg: #45201f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14161b; --surface: #1b1e25; --ink: #e8e9ee; --muted: #9da2b0; --line: #2c3039;
+  --accent: #8f9bff; --code-bg: #22262f;
+  --get: #5fd3bf; --get-bg: #163a35; --post: #9aa5ff; --post-bg: #252b55;
+  --patch: #f2b25c; --patch-bg: #3d2e17; --del: #ff8f86; --del-bg: #45201f;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 48px; }
+@media (max-width: 860px) { .wrap { grid-template-columns: minmax(0, 1fr); gap: 24px; } nav.index { position: static !important; } }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(30px, 4vw, 42px); letter-spacing: -0.02em; line-height: 1.1; }
+h2 { font-size: 22px; letter-spacing: -0.01em; }
+h3 { font-size: 15px; font-family: var(--font-body); font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+code, pre, .mono { font-family: var(--font-mono); font-size: 13px; }
+:not(pre) > code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+a { color: var(--accent); }
+a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+nav.index { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); align-self: start; display: flex; flex-direction: column; gap: 4px; }
+nav.index .label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+nav.index a { color: var(--ink); text-decoration: none; padding: 4px 8px; border-radius: 6px; font-size: 14px; display: flex; justify-content: space-between; }
+nav.index a:hover { background: var(--code-bg); }
+nav.index a span { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+
+main { display: flex; flex-direction: column; gap: 44px; min-width: 0; }
+header.top { display: flex; flex-direction: column; gap: 14px; }
+.eyebrow { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.base { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.base-row { display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 6px 6px 12px; }
+.base-row .k { font-size: 12px; color: var(--muted); }
+.pending { font-size: 12px; color: var(--patch); background: var(--patch-bg); padding: 2px 8px; border-radius: 99px; }
+
+.rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.rule { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.rule p { color: var(--muted); font-size: 14px; }
+
+section.group { display: flex; flex-direction: column; gap: 14px; scroll-margin-top: 24px; }
+.group-head { display: flex; flex-direction: column; gap: 4px; }
+.group-head p { color: var(--muted); }
+.ep-list { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.ep { display: grid; grid-template-columns: 76px minmax(0, 1fr) auto; gap: 4px 14px; padding: 12px 16px; border-top: 1px solid var(--line); align-items: baseline; }
+.ep:first-child { border-top: 0; }
+.method { font-family: var(--font-mono); font-size: 11.5px; font-weight: 500; text-align: center; padding: 2px 0; border-radius: 5px; letter-spacing: 0.03em; }
+.m-GET { color: var(--get); background: var(--get-bg); }
+.m-POST { color: var(--post); background: var(--post-bg); }
+.m-PATCH { color: var(--patch); background: var(--patch-bg); }
+.m-DELETE { color: var(--del); background: var(--del-bg); }
+.path { font-family: var(--font-mono); font-size: 13.5px; overflow-wrap: anywhere; }
+.who { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.desc { grid-column: 2 / 4; color: var(--muted); font-size: 14px; }
+.desc code { font-size: 12.5px; }
+@media (max-width: 520px) { .ep { grid-template-columns: 64px minmax(0, 1fr); } .who { grid-column: 2; } .desc { grid-column: 1 / 3; } }
+
+.examples { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+.ex { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.ex-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 13px; gap: 8px; }
+.ex pre { margin: 0; padding: 12px; overflow-x: auto; background: var(--code-bg); line-height: 1.5; flex: 1; }
+button.copy { font: 500 12px var(--font-body); color: var(--accent); background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 3px 9px; cursor: pointer; }
+button.copy:hover { background: var(--code-bg); }
+
+.flow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-family: var(--font-mono); font-size: 12.5px; }
+.flow .s { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; }
+.flow .arrow { color: var(--muted); }
+.flow .s.end { border-color: var(--get); color: var(--get); }
+.side-states { color: var(--muted); font-size: 14px; }
+
+table.codes { width: 100%; border-collapse: collapse; font-size: 14px; background: var(--surface); }
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+table.codes th, table.codes td { text-align: left; padding: 9px 14px; border-top: 1px solid var(--line); vertical-align: top; }
+table.codes th { border-top: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 500; }
+table.codes td:first-child { font-family: var(--font-mono); font-size: 12.5px; white-space: nowrap; }
+
+.search { display: flex; gap: 8px; align-items: center; }
+.search input { width: 100%; max-width: 420px; font: 14px var(--font-body); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; }
+.empty { color: var(--muted); font-size: 14px; }
+footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 16px; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div class="wrap">
+  <nav class="index" aria-label="Sections" id="index">
+    <div class="label">On this page</div>
+  </nav>
+
+  <main>
+    <header class="top">
+      <div class="eyebrow">Backend reference · for the brand &amp; creator apps</div>
+      <h1>Collab API v1</h1>
+      <p>Everything the React apps need to call the backend: base URL, login, the shape of every response, and all 61 endpoints with who can call them.</p>
+      <p class="side-states">The server is on Render's free plan: after about 15 minutes with no traffic it sleeps, and the first request then takes up to a minute. Any origin can call it for now.</p>
+      <div class="base">
+        <div class="base-row"><span class="k">Production</span><code id="prod-url">https://collab-api-ewju.onrender.com</code><button class="copy" data-copy="https://collab-api-ewju.onrender.com">Copy</button></div>
+        <div class="base-row"><span class="k">Local</span><code>http://localhost:8000</code><button class="copy" data-copy="http://localhost:8000">Copy</button></div>
+      </div>
+    </header>
+
+    <section class="group" id="basics">
+      <div class="group-head"><h2>How every request works</h2></div>
+      <div class="rules">
+        <div class="rule"><h3>Auth header</h3><p>Send <code>Authorization: Bearer &lt;access&gt;</code> on everything except login and refresh. Access tokens last 15 minutes.</p></div>
+        <div class="rule"><h3>Response envelope</h3><p>Always <code>{ success, data, error, meta }</code>. Read <code>data</code> on success, <code>error.code</code> on failure.</p></div>
+        <div class="rule"><h3>Money is in paise</h3><p><code>{ amount: 1118000, currency: "INR" }</code> is ₹11,180. Send <code>price</code> and <code>budget</code> in paise too.</p></div>
+        <div class="rule"><h3>Pagination</h3><p>Lists accept <code>?limit=</code> (max 50). Pass <code>meta.nextCursor</code> as <code>?cursor=</code> while <code>meta.hasMore</code> is true.</p></div>
+        <div class="rule"><h3>Strict input</h3><p>Unknown fields are rejected with 400. Send only the fields listed for each endpoint.</p></div>
+        <div class="rule"><h3>404 means not yours too</h3><p>Asking for someone else's order or campaign returns 404, so treat it as "not found or not accessible".</p></div>
+      </div>
+    </section>
+
+    <section class="group" id="login">
+      <div class="group-head">
+        <h2>Login flow</h2>
+        <p>OTP by SMS (Indian mobile numbers) or email. New users must finish signup once to pick brand or creator.</p>
+      </div>
+      <div class="examples">
+        <div class="ex"><div class="ex-head"><span>1 · Request a code</span><button class="copy">Copy</button></div>
+<pre>POST /v1/auth/otp/request/
+{ "channel": "sms", "destination": "9876543210" }
+
+→ 202 { "data": { "challengeId": "01a1…", "expiresIn": 300 } }</pre></div>
+        <div class="ex"><div class="ex-head"><span>2 · Verify the code</span><button class="copy">Copy</button></div>
+<pre>POST /v1/auth/otp/verify/
+{ "challengeId": "01a1…", "code": "482913" }
+
+→ 200 { "data": { "access": "…", "refresh": "…",
+  "user": { "role": null, "needsOnboarding": true } } }</pre></div>
+        <div class="ex"><div class="ex-head"><span>3 · Finish signup (once)</span><button class="copy">Copy</button></div>
+<pre>POST /v1/auth/signup/complete/
+{ "role": "brand", "fullName": "Priya S",
+  "brandName": "Nimbu Foods" }
+// creators send "displayName" instead of "brandName"</pre></div>
+        <div class="ex"><div class="ex-head"><span>4 · Refresh before expiry</span><button class="copy">Copy</button></div>
+<pre>POST /v1/auth/token/refresh/
+{ "refresh": "…" }
+
+→ 200 { "data": { "access": "…", "refresh": "…" } }
+// store the NEW refresh token; the old one stops working</pre></div>
+      </div>
+    </section>
+
+    <section class="group">
+      <div class="search">
+        <label for="filter" class="eyebrow" style="white-space:nowrap">Find endpoint</label>
+        <input id="filter" type="search" placeholder="Try “bids”, “approve”, “PATCH”…" autocomplete="off">
+      </div>
+      <p class="empty" id="no-results" hidden>No endpoint matches that search.</p>
+    </section>
+
+    <div id="groups" style="display:flex;flex-direction:column;gap:44px"></div>
+
+    <section class="group" id="shapes">
+      <div class="group-head"><h2>Common request bodies</h2></div>
+      <div class="examples">
+        <div class="ex"><div class="ex-head"><span>usageRights (campaigns, offers, checkout)</span><button class="copy">Copy</button></div>
+<pre>{
+  "duration": "6m",            // perpetual | 12m | 6m | 3m
+  "channels": ["paid_ads", "organic_social"],
+                               // + "website"
+  "exclusivity": false,
+  "territory": "India"
+}</pre></div>
+        <div class="ex"><div class="ex-head"><span>Create campaign</span><button class="copy">Copy</button></div>
+<pre>POST /v1/campaigns/
+{
+  "title": "Festive snack hamper",
+  "brief": "Showcase the hamper in a fun Reel.",
+  "platform": "instagram",     // instagram | youtube | other
+  "deliverables": "1 Reel",
+  "budgetMin": 500000,         // ₹5,000
+  "budgetMax": 1500000,        // ₹15,000
+  "closesAt": "2026-11-20T18:30:00Z",
+  "usageRights": { … }
+}</pre></div>
+        <div class="ex"><div class="ex-head"><span>Place a bid (creator)</span><button class="copy">Copy</button></div>
+<pre>POST /v1/campaigns/{id}/bids/
+{
+  "price": 850000,             // ₹8,500
+  "message": "I'd love to work with you…",
+  "expectedViews": 52000,
+  "deliveryDays": 5
+}</pre></div>
+        <div class="ex"><div class="ex-head"><span>Send an offer (brand)</span><button class="copy">Copy</button></div>
+<pre>POST /v1/offers/
+{
+  "creatorId": "01a1…",
+  "deliverable": "1 Recipe Reel",
+  "budget": 900000,
+  "deadline": "2026-11-30T18:30:00Z",
+  "message": "Loved your last campaign!",
+  "usageRights": { … }
+}</pre></div>
+        <div class="ex"><div class="ex-head"><span>Order amounts (in every order)</span><button class="copy">Copy</button></div>
+<pre>"amounts": {
+  "subtotal":      { "amount": 1000000, "currency": "INR" },
+  "platformFee":   { "amount": 100000,  "currency": "INR" },
+  "gst":           { "amount": 18000,   "currency": "INR" },
+  "tdsDeducted":   { "amount": 0,       "currency": "INR" },
+  "creatorPayout": { "amount": 1000000, "currency": "INR" },
+  "brandTotal":    { "amount": 1118000, "currency": "INR" }
+}</pre></div>
+        <div class="ex"><div class="ex-head"><span>Error response</span><button class="copy">Copy</button></div>
+<pre>{
+  "success": false,
+  "data": null,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Invalid input.",
+    "requestId": "508fba61…",
+    "details": { "price": ["Ensure this value is ≥ 100."] }
+  }
+}</pre></div>
+      </div>
+    </section>
+
+    <section class="group" id="order-flow">
+      <div class="group-head">
+        <h2>Order status flow</h2>
+        <p>Each order includes <code>allowedActions</code> for the current user, such as <code>["approve", "request_revision", "open_dispute"]</code>. Show buttons from that list instead of hard-coding the rules.</p>
+      </div>
+      <div class="flow" aria-label="Main order path">
+        <span class="s">awaiting_payment</span><span class="arrow">→</span>
+        <span class="s">funded</span><span class="arrow">→</span>
+        <span class="s">draft_submitted</span><span class="arrow">⇄</span>
+        <span class="s">revision_requested</span><span class="arrow">→</span>
+        <span class="s">approved</span><span class="arrow">→</span>
+        <span class="s end">completed</span>
+      </div>
+      <p class="side-states">Other states: <code>cancelled</code> (before payment), <code>refund_pending</code> → <code>refunded</code> (cancelled after payment), <code>disputed</code> (ops team decides). Payment is not live yet: in dev, use the simulate-payment endpoint to move an order to <code>funded</code>.</p>
+    </section>
+
+    <section class="group" id="errors">
+      <div class="group-head"><h2>Error codes to handle</h2><p>Switch on <code>error.code</code>. The <code>message</code> is safe to show but may change.</p></div>
+      <div class="table-wrap">
+        <table class="codes">
+          <thead><tr><th>Code</th><th>HTTP</th><th>What to do</th></tr></thead>
+          <tbody>
+            <tr><td>AUTH_REQUIRED / AUTH_INVALID</td><td>401</td><td>Refresh the token once; if that fails, send the user to login.</td></tr>
+            <tr><td>VALIDATION_ERROR</td><td>400</td><td>Show <code>error.details</code> next to each field.</td></tr>
+            <tr><td>OTP_INVALID</td><td>400</td><td>Wrong or expired code. Let the user retry or request a new one.</td></tr>
+            <tr><td>RATE_LIMITED</td><td>429</td><td>Too many tries. Wait for the <code>Retry-After</code> seconds before retrying.</td></tr>
+            <tr><td>FORBIDDEN</td><td>403</td><td>Wrong account type for this screen (e.g. a creator calling a brand endpoint).</td></tr>
+            <tr><td>NOT_FOUND</td><td>404</td><td>Missing, or not this user's resource.</td></tr>
+            <tr><td>ORDER_INVALID_TRANSITION</td><td>409</td><td>The order moved on. Refetch it and re-render <code>allowedActions</code>.</td></tr>
+            <tr><td>SIGNUP_ALREADY_COMPLETE</td><td>409</td><td>Skip onboarding; go to the home screen.</td></tr>
+            <tr><td>BID_EXISTS · OFFER_NOT_PENDING · BID_NOT_PENDING</td><td>409</td><td>Refetch and show the current state.</td></tr>
+            <tr><td>CART_EMPTY · ORDER_NOT_COMPLETED · INVALID_PHONE</td><td>422</td><td>Show the message to the user.</td></tr>
+            <tr><td>OTP_DELIVERY_FAILED</td><td>503</td><td>SMS/email provider is down. Ask the user to retry shortly.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer>
+      Machine-readable spec: <code>backend/openapi.yaml</code> in the repo. Generate TypeScript types with
+      <code>npx openapi-typescript backend/openapi.yaml -o src/api/schema.ts</code>. With the backend running locally, try every endpoint at <code>http://localhost:8000/v1/docs/</code>.
+      Not built yet: payments (Razorpay), invoices, chat, photo uploads, Instagram/YouTube connect, dashboard.
+    </footer>
+  </main>
+</div>
+
+<script>
+const GROUPS = [
+  { id: "auth", title: "Auth", note: "Login, tokens and onboarding.", eps: [
+    ["POST", "/v1/auth/otp/request/", "anyone", "<code>{channel, destination}</code> → <code>{challengeId, expiresIn}</code>. Limit: 5 per hour per number/email."],
+    ["POST", "/v1/auth/otp/verify/", "anyone", "<code>{challengeId, code}</code> → <code>{access, refresh, user}</code>. 5 tries per code."],
+    ["POST", "/v1/auth/token/refresh/", "anyone", "<code>{refresh}</code> → new <code>{access, refresh}</code>."],
+    ["POST", "/v1/auth/logout/", "signed in", "<code>{refresh}</code> → 204."],
+    ["POST", "/v1/auth/logout-all/", "signed in", "Signs the user out on every device."],
+    ["GET", "/v1/auth/me/", "signed in", "Current user, including <code>role</code>, <code>needsOnboarding</code> and <code>profileId</code>."],
+    ["POST", "/v1/auth/signup/complete/", "signed in", "<code>{role: \"brand\"|\"creator\", fullName, brandName?, displayName?}</code>. Once only."],
+  ]},
+  { id: "creators", title: "Creators", note: "Creator's own profile and packages, plus discovery for everyone.", eps: [
+    ["GET", "/v1/creators/me/", "creator", "Own profile with <code>approvalStatus</code> and packages."],
+    ["PATCH", "/v1/creators/me/", "creator", "<code>displayName, bio, categories[] (max 5), location, primaryPlatform, repliesWithin</code>."],
+    ["GET", "/v1/creators/me/packages/", "creator", "All own packages."],
+    ["POST", "/v1/creators/me/packages/", "creator", "<code>{title, description?, platform, deliverables, price, deliveryDays}</code>."],
+    ["PATCH", "/v1/creators/me/packages/{id}/", "creator", "Any package field, including <code>active</code>."],
+    ["DELETE", "/v1/creators/me/packages/{id}/", "creator", "Deactivates the package."],
+    ["GET", "/v1/creators/", "brand, creator", "Search approved creators: <code>?q= &amp;category= &amp;location= &amp;platform= &amp;verified= &amp;minPrice= &amp;maxPrice= &amp;minFollowers=</code>."],
+    ["GET", "/v1/creators/{id}/", "brand, creator", "Public profile with active packages and <code>startingPrice</code>."],
+    ["GET", "/v1/creators/{id}/reviews/", "brand, creator", "Reviews, newest first."],
+  ]},
+  { id: "brands", title: "Brand, lists & cart", note: "Brand profile, saved creator lists, and buying packages.", eps: [
+    ["GET", "/v1/brands/me/", "brand", "Own brand profile."],
+    ["PATCH", "/v1/brands/me/", "brand", "<code>name, website, industry, legalName, gstin, stateCode, billingAddress{line1, line2?, city, state, pincode}</code>."],
+    ["GET", "/v1/lists/", "brand", "Saved lists with <code>creatorCount</code>."],
+    ["POST", "/v1/lists/", "brand", "<code>{name}</code>. Names are unique per brand."],
+    ["GET", "/v1/lists/{id}/", "brand", "List with its creators."],
+    ["PATCH", "/v1/lists/{id}/", "brand", "Rename: <code>{name}</code>."],
+    ["DELETE", "/v1/lists/{id}/", "brand", "Delete the list."],
+    ["POST", "/v1/lists/{id}/creators/", "brand", "<code>{creatorId}</code> → 204."],
+    ["DELETE", "/v1/lists/{id}/creators/{creatorId}/", "brand", "Remove from list."],
+    ["GET", "/v1/cart/", "brand", "Cart items with package and creator."],
+    ["POST", "/v1/cart/", "brand", "<code>{packageId, brief?}</code>."],
+    ["DELETE", "/v1/cart/{itemId}/", "brand", "Remove an item."],
+    ["POST", "/v1/cart/checkout/", "brand", "<code>{usageRights}</code> → one order per item. Prices come from the server."],
+  ]},
+  { id: "campaigns", title: "Campaigns & bids", note: "Brands post campaigns; approved creators bid; the brand selects a bid to create an order.", eps: [
+    ["GET", "/v1/campaigns/", "brand, creator", "Brand: own campaigns (<code>?status=</code>). Approved creator: open campaigns. Also at <code>/v1/creators/me/campaigns/</code>."],
+    ["POST", "/v1/campaigns/", "brand", "See “Create campaign” below. <code>status</code> is optional: <code>open</code> (default) or <code>draft</code>."],
+    ["GET", "/v1/campaigns/{id}/", "brand, creator", "One campaign."],
+    ["PATCH", "/v1/campaigns/{id}/", "brand", "Edit while draft or open."],
+    ["POST", "/v1/campaigns/{id}/close/", "brand", "Closes it; pending bids become rejected."],
+    ["GET", "/v1/campaigns/{id}/bids/", "brand, creator", "Brand: all bids. Creator: only its own bid."],
+    ["POST", "/v1/campaigns/{id}/bids/", "approved creator", "<code>{price, message, expectedViews?, deliveryDays}</code>. One bid per campaign."],
+    ["PATCH", "/v1/campaigns/{id}/bids/{bidId}/", "creator", "Edit own bid while pending."],
+    ["POST", "/v1/campaigns/{id}/bids/{bidId}/withdraw/", "creator", "Withdraw own pending bid."],
+    ["POST", "/v1/campaigns/{id}/bids/{bidId}/select/", "brand", "Selects the bid and returns the new order."],
+  ]},
+  { id: "offers", title: "Offers", note: "A brand's direct offer to one creator.", eps: [
+    ["GET", "/v1/offers/", "brand", "Offers this brand sent."],
+    ["POST", "/v1/offers/", "brand", "See “Send an offer” below."],
+    ["POST", "/v1/offers/{id}/withdraw/", "brand", "Withdraw a pending offer."],
+    ["GET", "/v1/creators/me/offers/", "creator", "Incoming offers, <code>?status=pending</code> etc."],
+    ["PATCH", "/v1/creators/me/offers/{id}/", "creator", "<code>{status: \"accepted\"|\"rejected\"}</code> → <code>{offer, order}</code>."],
+  ]},
+  { id: "orders", title: "Orders", note: "Shared by the brand and the creator on the order. Use allowedActions to decide which buttons to show.", eps: [
+    ["GET", "/v1/orders/", "brand, creator", "My orders, <code>?status=</code>. Creators can also use <code>/v1/creators/me/orders/</code>."],
+    ["GET", "/v1/orders/{id}/", "brand, creator", "Full order: amounts, usageRights, deadline, revisions, allowedActions."],
+    ["GET", "/v1/orders/{id}/deliverables/", "brand, creator", "All submitted drafts with brand feedback."],
+    ["POST", "/v1/orders/{id}/deliverables/", "creator", "<code>{contentUrl (https only), note?}</code>."],
+    ["POST", "/v1/orders/{id}/revisions/", "brand", "<code>{feedback}</code>. Max 2 per order."],
+    ["POST", "/v1/orders/{id}/approve/", "brand", "Approve the latest draft."],
+    ["POST", "/v1/orders/{id}/cancel/", "brand, creator", "<code>{reason}</code> (min 5 chars). Allowed only in some states."],
+    ["POST", "/v1/orders/{id}/disputes/", "brand, creator", "<code>{reason}</code>. The ops team resolves it."],
+    ["POST", "/v1/orders/{id}/review/", "brand", "<code>{stars 1–5, text?}</code>. Once, after the order is completed."],
+    ["POST", "/v1/dev/orders/{id}/simulate-payment/", "brand · dev only", "Marks an order as paid, until Razorpay is connected. Off in production."],
+  ]},
+  { id: "notifications", title: "Notifications", note: "In-app notifications for the signed-in user.", eps: [
+    ["GET", "/v1/notifications/", "signed in", "Newest first. <code>?unread=true</code> for unread only."],
+    ["GET", "/v1/notifications/unread-count/", "signed in", "<code>{unread}</code> for the badge."],
+    ["PATCH", "/v1/notifications/{id}/read/", "signed in", "Mark one as read."],
+    ["POST", "/v1/notifications/read-all/", "signed in", "Mark all as read."],
+  ]},
+];
+
+const groupsEl = document.getElementById("groups");
+const indexEl = document.getElementById("index");
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+const extraIndex = [["basics", "Basics"], ["login", "Login flow"]];
+extraIndex.forEach(([id, label]) => indexEl.insertAdjacentHTML("beforeend", `<a href="#${id}">${label}</a>`));
+
+GROUPS.forEach((g) => {
+  const rows = g.eps.map(([m, p, who, desc]) => `
+    <div class="ep" data-search="${esc((m + " " + p + " " + who + " " + desc.replace(/<[^>]+>/g, "")).toLowerCase())}">
+      <span class="method m-${m}">${m}</span>
+      <span class="path">${esc(p)}</span>
+      <span class="who">${esc(who)}</span>
+      <span class="desc">${desc}</span>
+    </div>`).join("");
+  groupsEl.insertAdjacentHTML("beforeend", `
+    <section class="group" id="${g.id}">
+      <div class="group-head"><h2>${g.title}</h2><p>${g.note}</p></div>
+      <div class="ep-list">${rows}</div>
+    </section>`);
+  indexEl.insertAdjacentHTML("beforeend", `<a href="#${g.id}">${g.title}<span>${g.eps.length}</span></a>`);
+});
+[["shapes", "Request bodies"], ["order-flow", "Order flow"], ["errors", "Error codes"]]
+  .forEach(([id, label]) => indexEl.insertAdjacentHTML("beforeend", `<a href="#${id}">${label}</a>`));
+
+const filter = document.getElementById("filter");
+filter.addEventListener("input", () => {
+  const q = filter.value.trim().toLowerCase();
+  let total = 0;
+  groupsEl.querySelectorAll("section.group").forEach((sec) => {
+    let shown = 0;
+    sec.querySelectorAll(".ep").forEach((ep) => {
+      const hit = !q || ep.dataset.search.includes(q);
+      ep.hidden = !hit;
+      if (hit) shown++;
+    });
+    sec.hidden = shown === 0;
+    total += shown;
+  });
+  document.getElementById("no-results").hidden = total > 0;
+});
+
+document.addEventListener("click", async (e) => {
+  const btn = e.target.closest("button.copy");
+  if (!btn) return;
+  const text = btn.dataset.copy ?? btn.closest(".ex")?.querySelector("pre")?.innerText ?? "";
+  try {
+    await navigator.clipboard.writeText(text);
+    btn.textContent = "Copied";
+  } catch {
+    const pre = btn.closest(".ex")?.querySelector("pre");
+    if (pre) { const r = document.createRange(); r.selectNodeContents(pre); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+    btn.textContent = "Selected";
+  }
+  setTimeout(() => (btn.textContent = "Copy"), 1500);
+});
+</script>
