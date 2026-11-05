@@ -193,6 +193,8 @@ EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="")
+# Fail fast: some hosts (e.g. Render free) block outbound SMTP, which would otherwise hang the request.
+EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=10)
 
 # --- Money (pending CA sign-off; see docs/04) -------------------------------------------------
 FEE_CONFIG = {

@@ -126,8 +126,9 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
       <div class="eyebrow">Backend reference · for the brand &amp; creator apps</div>
       <h1>Collab API v1</h1>
       <p>Everything the React apps need to call the backend: base URL, login, the shape of every response, and all 61 endpoints with who can call them.</p>
+      <p class="side-states">The server is on Render's free plan: after about 15 minutes with no traffic it sleeps, and the first request then takes up to a minute. Any origin can call it for now.</p>
       <div class="base">
-        <div class="base-row"><span class="k">Production</span><code id="prod-url">https://&lt;render-url&gt;</code><span class="pending">URL coming after deploy</span></div>
+        <div class="base-row"><span class="k">Production</span><code id="prod-url">https://collab-api-ewju.onrender.com</code><button class="copy" data-copy="https://collab-api-ewju.onrender.com">Copy</button></div>
         <div class="base-row"><span class="k">Local</span><code>http://localhost:8000</code><button class="copy" data-copy="http://localhost:8000">Copy</button></div>
       </div>
     </header>
