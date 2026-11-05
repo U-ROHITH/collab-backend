@@ -125,7 +125,7 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
     <header class="top">
       <div class="eyebrow">Backend reference · for the brand &amp; creator apps</div>
       <h1>Collab API v1</h1>
-      <p>Everything the React apps need to call the backend: base URL, login, the shape of every response, and all 61 endpoints with who can call them.</p>
+      <p>Everything the React apps need to call the backend: base URL, login, the shape of every response, and all 72 endpoints with who can call them.</p>
       <p class="side-states">The server is on Render's free plan: after about 15 minutes with no traffic it sleeps, and the first request then takes up to a minute. Any origin can call it for now.</p>
       <div class="base">
         <div class="base-row"><span class="k">Production</span><code id="prod-url">https://collab-api-ewju.onrender.com</code><button class="copy" data-copy="https://collab-api-ewju.onrender.com">Copy</button></div>
@@ -250,6 +250,42 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
       </div>
     </section>
 
+    <section class="group" id="live">
+      <div class="group-head">
+        <h2>Uploading a file and live updates</h2>
+        <p>Files go straight from the browser to storage, never through the API. Live updates arrive over one WebSocket per signed-in user; sending still goes through the REST endpoints.</p>
+      </div>
+      <div class="examples">
+        <div class="ex"><div class="ex-head"><span>Upload flow (fetch)</span><button class="copy">Copy</button></div>
+<pre>// 1. ask for a single-use upload URL
+const r1 = await api.post("/v1/uploads/", {
+  kind: "avatar", contentType: file.type, size: file.size });
+const { upload, uploadUrl, headers } = r1.data;
+
+// 2. PUT the file directly to storage (no auth header)
+await fetch(uploadUrl, { method: "PUT", headers, body: file });
+
+// 3. tell the API it's done
+const done = await api.post(`/v1/uploads/${upload.id}/complete/`);
+// avatar/logo/gallery: done.data.url is the public image URL
+// deliverable: send { fileUploadId: upload.id } to /deliverables/
+// chat: send { attachmentUploadId: upload.id } to /messages/</pre></div>
+        <div class="ex"><div class="ex-head"><span>Live updates (WebSocket)</span><button class="copy">Copy</button></div>
+<pre>const { ticket } = (await api.post("/v1/realtime/ticket/")).data;
+const ws = new WebSocket(
+  `wss://collab-api-ewju.onrender.com/ws/?ticket=${ticket}`);
+
+ws.onmessage = (e) => {
+  const msg = JSON.parse(e.data);
+  // { event: "connected" }
+  // { event: "new_message", conversationId, message }
+  // { event: "notification", notification: {id, type, title, data} }
+};
+// keep-alive: ws.send(JSON.stringify({ type: "ping" })) → {type:"pong"}
+// on close: get a NEW ticket and reconnect, then refetch the open screen</pre></div>
+      </div>
+    </section>
+
     <section class="group" id="order-flow">
       <div class="group-head">
         <h2>Order status flow</h2>
@@ -291,7 +327,7 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
     <footer>
       Machine-readable spec: <code>backend/openapi.yaml</code> in the repo. Generate TypeScript types with
       <code>npx openapi-typescript backend/openapi.yaml -o src/api/schema.ts</code>. With the backend running locally, try every endpoint at <code>http://localhost:8000/v1/docs/</code>.
-      Not built yet: payments (Razorpay), invoices, chat, photo uploads, Instagram/YouTube connect, dashboard.
+      Not built yet: payments (Razorpay), invoices, Instagram/YouTube connect, dashboard, web push and email notifications.
     </footer>
   </main>
 </div>
@@ -356,7 +392,7 @@ const GROUPS = [
     ["GET", "/v1/orders/", "brand, creator", "My orders, <code>?status=</code>. Creators can also use <code>/v1/creators/me/orders/</code>."],
     ["GET", "/v1/orders/{id}/", "brand, creator", "Full order: amounts, usageRights, deadline, revisions, allowedActions."],
     ["GET", "/v1/orders/{id}/deliverables/", "brand, creator", "All submitted drafts with brand feedback."],
-    ["POST", "/v1/orders/{id}/deliverables/", "creator", "<code>{contentUrl (https only), note?}</code>."],
+    ["POST", "/v1/orders/{id}/deliverables/", "creator", "Send exactly one of <code>contentUrl</code> (https link) or <code>fileUploadId</code> (a finished <code>deliverable</code> upload), plus <code>note?</code>."],
     ["POST", "/v1/orders/{id}/revisions/", "brand", "<code>{feedback}</code>. Max 2 per order."],
     ["POST", "/v1/orders/{id}/approve/", "brand", "Approve the latest draft."],
     ["POST", "/v1/orders/{id}/cancel/", "brand, creator", "<code>{reason}</code> (min 5 chars). Allowed only in some states."],
@@ -369,6 +405,21 @@ const GROUPS = [
     ["GET", "/v1/notifications/unread-count/", "signed in", "<code>{unread}</code> for the badge."],
     ["PATCH", "/v1/notifications/{id}/read/", "signed in", "Mark one as read."],
     ["POST", "/v1/notifications/read-all/", "signed in", "Mark all as read."],
+  ]},
+  { id: "uploads", title: "File uploads", note: "Three steps: ask for an upload URL, PUT the file there directly from the browser, then call complete. See “Uploading a file” below.", eps: [
+    ["POST", "/v1/uploads/", "brand, creator", "<code>{kind, contentType, size}</code> → <code>{upload, uploadUrl, method: \"PUT\", headers}</code>. Kinds: <code>avatar</code> (creator), <code>gallery</code> (creator, max 12), <code>brand_logo</code> (brand) take jpeg/png/webp up to 10 MB; <code>deliverable</code> (creator) takes images, pdf, mp4, mov up to 50 MB; <code>chat_attachment</code> takes images or pdf up to 10 MB."],
+    ["POST", "/v1/uploads/{id}/complete/", "uploader", "Call after the PUT succeeds. Images are re-encoded to WebP; avatar, logo and gallery attach automatically. Returns <code>{id, kind, status, contentType, size, url}</code>; <code>url</code> is null for private files."],
+    ["GET", "/v1/uploads/{id}/download-url/", "brand, creator", "Link for a private file (deliverable or chat attachment), valid 5 minutes. Only the uploader and the other party on that order or conversation can get it."],
+    ["DELETE", "/v1/creators/me/media/{id}/", "creator", "Remove a gallery image. Gallery items appear as <code>gallery: [{id, url}]</code> on creator profiles."],
+  ]},
+  { id: "messaging", title: "Messaging", note: "One conversation per brand–creator pair. It can be opened once there's a bid, offer or order between them.", eps: [
+    ["GET", "/v1/conversations/", "brand, creator", "My conversations with <code>withParty {type, id, name, image}</code>, <code>lastMessage</code>, <code>unread</code>, <code>updatedAt</code>."],
+    ["POST", "/v1/conversations/", "brand, creator", "Brand sends <code>{creatorId}</code>, creator sends <code>{brandId}</code>. Returns the existing conversation if there is one. 422 <code>CONVERSATION_NOT_ALLOWED</code> without a bid, offer or order."],
+    ["GET", "/v1/conversations/{id}/", "party", "One conversation with its summary."],
+    ["GET", "/v1/conversations/{id}/messages/", "party", "Newest first, 30 per page. Pass <code>meta.nextCursor</code> to load older ones."],
+    ["POST", "/v1/conversations/{id}/messages/", "party", "<code>{text?, attachmentUploadId?}</code>, at least one. Max 4,000 characters; 30 messages a minute."],
+    ["POST", "/v1/conversations/{id}/read/", "party", "Mark the conversation as read (also clears its new-message notification)."],
+    ["POST", "/v1/realtime/ticket/", "brand, creator", "<code>{ticket, expiresIn: 30, path: \"/ws/\"}</code>. Connect to <code>wss://collab-api-ewju.onrender.com/ws/?ticket=…</code> within 30 seconds. Each ticket works once."],
   ]},
 ];
 
@@ -394,7 +445,7 @@ GROUPS.forEach((g) => {
     </section>`);
   indexEl.insertAdjacentHTML("beforeend", `<a href="#${g.id}">${g.title}<span>${g.eps.length}</span></a>`);
 });
-[["shapes", "Request bodies"], ["order-flow", "Order flow"], ["errors", "Error codes"]]
+[["shapes", "Request bodies"], ["live", "Uploads & live"], ["order-flow", "Order flow"], ["errors", "Error codes"]]
   .forEach(([id, label]) => indexEl.insertAdjacentHTML("beforeend", `<a href="#${id}">${label}</a>`));
 
 const filter = document.getElementById("filter");

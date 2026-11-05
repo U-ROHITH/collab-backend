@@ -1,5 +1,7 @@
 # API Reference (v1): what's built
 
+Live base URL: **https://collab-api-ewju.onrender.com**
+
 Interactive docs: run the server and open **`/v1/docs/`** (Swagger, dev only). Raw schema: `/v1/schema/`.
 React apps should generate types from the schema: `npx openapi-typescript http://localhost:8000/v1/schema/ -o src/api/schema.ts`.
 
@@ -90,8 +92,42 @@ Status flow: `awaiting_payment → funded → draft_submitted ⇄ revision_reque
 | PATCH | `/v1/notifications/{id}/read/` |
 | POST | `/v1/notifications/read-all/` |
 
+## File uploads
+Three steps. Files go from the browser straight to storage; the API never streams them.
+1. `POST /v1/uploads/` with `{kind, contentType, size}` → `{upload, uploadUrl, method: "PUT", headers}`
+2. `PUT` the file to `uploadUrl` with those headers (no auth header). The URL works once.
+3. `POST /v1/uploads/{id}/complete/` → `{id, kind, status, contentType, size, url}`
+
+| Kind | Who | Types | Max | Visibility |
+|---|---|---|---|---|
+| `avatar` | creator | jpeg, png, webp | 10 MB | public; re-encoded to WebP; sets `avatarUrl` |
+| `gallery` | creator | jpeg, png, webp | 10 MB (12 images) | public; shows as `gallery` on the profile |
+| `brand_logo` | brand | jpeg, png, webp | 10 MB | public; sets `logoUrl` |
+| `deliverable` | creator | images, pdf, mp4, mov | 50 MB | private; attach with `fileUploadId` on `/orders/{id}/deliverables/` |
+| `chat_attachment` | brand/creator | images, pdf | 10 MB | private; attach with `attachmentUploadId` on a message |
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/v1/uploads/{id}/download-url/` | private files only; 5-minute link; uploader + the other party on that order/conversation |
+| DELETE | `/v1/creators/me/media/{id}/` | remove a gallery image |
+
+## Messaging
+One conversation per brand–creator pair, allowed once a bid, offer or order exists between them.
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/v1/conversations/` | `withParty`, `lastMessage`, `unread`, `updatedAt` |
+| POST | `/v1/conversations/` | brand: `{creatorId}`; creator: `{brandId}`. Returns the existing thread if any |
+| GET | `/v1/conversations/{id}/` | |
+| GET | `/v1/conversations/{id}/messages/` | newest first, 30 per page |
+| POST | `/v1/conversations/{id}/messages/` | `{text?, attachmentUploadId?}`; 4,000 chars max; 30/min |
+| POST | `/v1/conversations/{id}/read/` | marks read |
+
+## Live updates (WebSocket)
+`POST /v1/realtime/ticket/` → `{ticket}` (valid 30 s, single use), then connect to `wss://collab-api-ewju.onrender.com/ws/?ticket=<ticket>`.
+Events: `{event: "connected"}`, `{event: "new_message", conversationId, message}`, `{event: "notification", notification}`. Send `{"type":"ping"}` → `{"type":"pong"}`. On disconnect, get a new ticket and reconnect.
+
 ## Ops (Django admin, not an API)
 At `/<DJANGO_ADMIN_URL>`, with TOTP 2FA. Setup: `uv run python manage.py grant_admin you@company.com`, then `uv run python manage.py add_totp you@company.com`. Approve/reject creators via the admin actions. Orders are read-only there.
 
 ## Not built yet (next phases)
-Razorpay payments/escrow/payouts/refunds + webhook, GST invoice / TDS statement PDFs, messaging + WebSocket, web push + email notifications, photo uploads (presigned), Instagram/YouTube connect, brand dashboard/reporting, admin APIs for disputes/refunds, Celery jobs (auto-approve, payment expiry).
+Razorpay payments/escrow/payouts/refunds + webhook, GST invoice / TDS statement PDFs, web push + email notifications, Instagram/YouTube connect, brand dashboard/reporting, admin APIs for disputes/refunds, Celery jobs (auto-approve, payment expiry).
