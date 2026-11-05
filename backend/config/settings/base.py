@@ -121,6 +121,9 @@ else:
 # --- CORS -----------------------------------------------------------------------------------
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
 CORS_ALLOW_CREDENTIALS = False  # bearer tokens, not cookies
+# TEMPORARY (founder request): any origin may call the API. Safe-ish because auth is a bearer header,
+# never cookies, so browsers do not attach credentials cross-site. Turn off once frontend domains are known.
+CORS_ALLOW_ALL_ORIGINS = env.bool("CORS_ALLOW_ALL_ORIGINS", default=False)
 
 # --- DRF ------------------------------------------------------------------------------------
 REST_FRAMEWORK = {

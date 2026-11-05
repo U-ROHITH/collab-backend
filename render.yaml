@@ -30,8 +30,8 @@ services:
         sync: false            # e.g. ops-<random>/
       - key: DATABASE_URL
         sync: false            # NEW Supabase project, transaction pooler (6543)
-      - key: CORS_ALLOWED_ORIGINS
-        sync: false            # exact https origins of the React apps
+      - key: CORS_ALLOW_ALL_ORIGINS
+        value: "true"          # TEMPORARY per founder; set exact origins later
       - key: TWO_FACTOR_API_KEY
         sync: false
       - key: RESEND_API_KEY
