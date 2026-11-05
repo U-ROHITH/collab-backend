@@ -17,7 +17,7 @@ services:
       - key: DJANGO_ALLOWED_HOSTS
         value: "*"             # TEMPORARY per founder; restrict to the real domain later
       - key: DJANGO_SECRET_KEY
-        generateValue: true
+        sync: false            # set a 64+ char value (generateValue gives 44 chars; prod requires 50+)
       - key: JWT_SIGNING_KEY
         generateValue: true
       - key: DATA_ENCRYPTION_KEY
