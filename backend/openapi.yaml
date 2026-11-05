@@ -123,6 +123,33 @@ paths:
               schema:
                 $ref: '#/components/schemas/TokenRefresh'
           description: ''
+  /v1/brands/{brand_id}/:
+    get:
+      operationId: brands_retrieve
+      description: |-
+        A brand's public profile (name, logo, industry, website, city).
+
+        Creators can see it once they have an offer, order or conversation with that brand. Open
+        campaigns stay anonymous (blind bidding), so a bid alone doesn't reveal the brand.
+        Brands can view their own.
+      parameters:
+      - in: path
+        name: brand_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - brands
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BrandPublic'
+          description: ''
   /v1/brands/me/:
     get:
       operationId: brands_me_retrieve
@@ -560,6 +587,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ConversationOutput'
+          description: ''
+  /v1/conversations/{conversation_id}/dates/:
+    get:
+      operationId: conversations_dates_list
+      description: 'Calendar support: the IST days that have messages, with counts.
+        Optional ?month=YYYY-MM.'
+      parameters:
+      - in: path
+        name: conversation_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - conversations
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MessageDay'
           description: ''
   /v1/conversations/{conversation_id}/messages/:
     get:
@@ -1769,7 +1821,8 @@ components:
           minimum: 0
         createdAt:
           type: string
-          format: date-time
+          format: date
+          readOnly: true
       required:
       - campaignId
       - createdAt
@@ -1858,6 +1911,33 @@ components:
       - logoUrl
       - name
       - stateCode
+    BrandPublic:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        logoUrl:
+          type: string
+          format: uri
+          nullable: true
+        industry:
+          type: string
+        website:
+          type: string
+          format: uri
+          nullable: true
+        city:
+          type: string
+      required:
+      - city
+      - id
+      - industry
+      - logoUrl
+      - name
+      - website
     CampaignInputRequest:
       type: object
       properties:
@@ -1885,7 +1965,8 @@ components:
           minimum: 100
         closesAt:
           type: string
-          format: date-time
+          format: date
+          description: YYYY-MM-DD; bidding closes at the end of that day (IST)
         status:
           allOf:
           - $ref: '#/components/schemas/CampaignInputStatusEnum'
@@ -1911,6 +1992,8 @@ components:
         * `open` - open
     CampaignOutput:
       type: object
+      description: 'Creators bid blind: `brand` is null for creators. They learn the
+        brand once an order exists.'
       properties:
         id:
           type: string
@@ -1939,17 +2022,19 @@ components:
           readOnly: true
         closesAt:
           type: string
-          format: date-time
+          format: date
         status:
           $ref: '#/components/schemas/CampaignOutputStatusEnum'
         usageRights: {}
         brand:
           type: object
           additionalProperties: {}
+          nullable: true
           readOnly: true
         createdAt:
           type: string
-          format: date-time
+          format: date
+          readOnly: true
       required:
       - brand
       - brief
@@ -2496,6 +2581,17 @@ components:
         * `active` - Active
         * `suspended` - Suspended
         * `deactivated` - Deactivated
+    MessageDay:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        count:
+          type: integer
+      required:
+      - count
+      - date
     MessageInputRequest:
       type: object
       properties:
@@ -2529,12 +2625,20 @@ components:
         sentAt:
           type: string
           format: date-time
+        sentDate:
+          type: string
+          readOnly: true
+        sentTime:
+          type: string
+          readOnly: true
       required:
       - attachment
       - fromMe
       - id
       - senderId
       - sentAt
+      - sentDate
+      - sentTime
       - text
     NotificationOutput:
       type: object
@@ -2584,7 +2688,8 @@ components:
           minimum: 100
         deadline:
           type: string
-          format: date-time
+          format: date
+          description: YYYY-MM-DD; due by the end of that day (IST)
         message:
           type: string
           minLength: 1
@@ -2623,7 +2728,7 @@ components:
           readOnly: true
         deadline:
           type: string
-          format: date-time
+          format: date
         message:
           type: string
           maxLength: 2000
@@ -2632,7 +2737,8 @@ components:
           $ref: '#/components/schemas/OfferOutputStatusEnum'
         createdAt:
           type: string
-          format: date-time
+          format: date
+          readOnly: true
       required:
       - brand
       - budget
@@ -2718,8 +2824,8 @@ components:
           type: integer
         deadline:
           type: string
-          format: date-time
-          nullable: true
+          format: date
+          readOnly: true
         revisionCount:
           type: integer
         maxRevisions:
@@ -2749,6 +2855,7 @@ components:
       - completedAt
       - createdAt
       - creator
+      - deadline
       - deliverables
       - deliveryDays
       - fundedAt
@@ -3145,7 +3252,8 @@ components:
           minimum: 100
         closesAt:
           type: string
-          format: date-time
+          format: date
+          description: YYYY-MM-DD; bidding closes at the end of that day (IST)
         status:
           allOf:
           - $ref: '#/components/schemas/CampaignInputStatusEnum'

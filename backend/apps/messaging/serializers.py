@@ -2,6 +2,8 @@ from typing import Any
 
 from rest_framework import serializers
 
+from apps.core.dates import ist_date, ist_time
+from apps.core.parties import brand_public, creator_public
 from apps.core.serializers import StrictSerializer
 from apps.identity.models import Role
 from apps.messaging.models import Conversation, Message
@@ -17,12 +19,20 @@ class MessageOutput(serializers.ModelSerializer):
     fromMe = serializers.SerializerMethodField()  # noqa: N815
     text = serializers.CharField(source="body")
     attachment = serializers.SerializerMethodField()
-    sentAt = serializers.DateTimeField(source="created_at")  # noqa: N815
+    sentAt = serializers.DateTimeField(source="created_at")  # noqa: N815  full timestamp (UTC)
+    sentDate = serializers.SerializerMethodField()  # noqa: N815  "YYYY-MM-DD" in IST, for day headers
+    sentTime = serializers.SerializerMethodField()  # noqa: N815  "HH:MM" in IST (24h)
     senderId = serializers.UUIDField(source="sender_id")  # noqa: N815
 
     class Meta:
         model = Message
-        fields = ("id", "senderId", "fromMe", "text", "attachment", "sentAt")
+        fields = ("id", "senderId", "fromMe", "text", "attachment", "sentAt", "sentDate", "sentTime")
+
+    def get_sentDate(self, obj: Message) -> str:  # noqa: N802
+        return ist_date(obj.created_at).isoformat()
+
+    def get_sentTime(self, obj: Message) -> str:  # noqa: N802
+        return ist_time(obj.created_at)
 
     def get_fromMe(self, obj: Message) -> bool:  # noqa: N802
         uid = self.context.get("user_id")
@@ -50,9 +60,21 @@ class ConversationOutput(serializers.ModelSerializer):
     def get_withParty(self, obj: Conversation) -> dict[str, Any]:  # noqa: N802
         if self._me().role == Role.BRAND:
             c = obj.creator
-            return {"type": "creator", "id": str(c.id), "name": c.display_name, "image": c.avatar_url or None}
+            return {
+                "type": "creator",
+                "id": str(c.id),
+                "name": c.display_name,
+                "image": c.avatar_url or None,
+                "profile": creator_public(c),
+            }
         b = obj.brand
-        return {"type": "brand", "id": str(b.id), "name": b.name, "image": b.logo_url or None}
+        return {
+            "type": "brand",
+            "id": str(b.id),
+            "name": b.name,
+            "image": b.logo_url or None,
+            "profile": brand_public(b),
+        }
 
     def get_lastMessage(self, obj: Conversation) -> dict[str, Any] | None:  # noqa: N802
         if obj.last_message_at is None:
@@ -62,6 +84,8 @@ class ConversationOutput(serializers.ModelSerializer):
             "hasAttachment": bool(getattr(obj, "last_attachment_id", None)),
             "fromMe": str(getattr(obj, "last_sender_id", "")) == str(self._me().pk),
             "sentAt": obj.last_message_at,
+            "sentDate": ist_date(obj.last_message_at).isoformat(),
+            "sentTime": ist_time(obj.last_message_at),
         }
 
     def get_unread(self, obj: Conversation) -> int:

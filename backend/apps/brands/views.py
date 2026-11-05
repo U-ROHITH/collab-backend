@@ -1,8 +1,8 @@
 from uuid import UUID
 
 from django.db.models import Count
-from drf_spectacular.utils import extend_schema
-from rest_framework import status
+from drf_spectacular.utils import extend_schema, inline_serializer
+from rest_framework import serializers, status
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -21,7 +21,8 @@ from apps.brands.serializers import (
     ListOutput,
 )
 from apps.core.exceptions import NotFound
-from apps.identity.permissions import IsBrand
+from apps.core.parties import brand_public
+from apps.identity.permissions import IsBrand, IsBrandOrCreator
 from apps.orders.serializers import OrderOutput
 
 
@@ -152,3 +153,33 @@ class CheckoutView(APIView):
             brand=my_brand(request), actor=request.user, usage_rights=data.validated_data["usageRights"]
         )
         return Response(OrderOutput(orders, many=True, context={"request": request}).data, status=201)
+
+
+class BrandPublicProfileView(APIView):
+    """A brand's public profile (name, logo, industry, website, city).
+
+    Creators can see it once they have an offer, order or conversation with that brand. Open
+    campaigns stay anonymous (blind bidding), so a bid alone doesn't reveal the brand.
+    Brands can view their own.
+    """
+
+    permission_classes = [IsBrandOrCreator]
+
+    @extend_schema(
+        responses=inline_serializer(
+            "BrandPublic",
+            {
+                "id": serializers.UUIDField(),
+                "name": serializers.CharField(),
+                "logoUrl": serializers.URLField(allow_null=True),
+                "industry": serializers.CharField(),
+                "website": serializers.URLField(allow_null=True),
+                "city": serializers.CharField(),
+            },
+        )
+    )
+    def get(self, request: Request, brand_id: UUID) -> Response:
+        brand = Brand.objects.filter(pk=brand_id).first()
+        if brand is None or not services.can_view_brand(request.user, brand):
+            raise NotFound()
+        return Response(brand_public(brand))

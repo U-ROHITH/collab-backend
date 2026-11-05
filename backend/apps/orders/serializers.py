@@ -2,6 +2,8 @@ from typing import Any
 
 from rest_framework import serializers
 
+from apps.core.dates import LocalDateField
+from apps.core.parties import brand_public, creator_public
 from apps.core.serializers import HttpsURLField, StrictSerializer
 from apps.creators.serializers import money
 from apps.orders import state_machine
@@ -22,6 +24,7 @@ class OrderOutput(serializers.ModelSerializer):
     approvedAt = serializers.DateTimeField(source="approved_at")  # noqa: N815
     completedAt = serializers.DateTimeField(source="completed_at")  # noqa: N815
     allowedActions = serializers.SerializerMethodField()  # noqa: N815
+    deadline = LocalDateField()  # "YYYY-MM-DD" (IST); null until funded for bid/package orders
 
     class Meta:
         model = Order
@@ -49,10 +52,10 @@ class OrderOutput(serializers.ModelSerializer):
         )
 
     def get_brand(self, obj: Order) -> dict[str, Any]:
-        return {"id": str(obj.brand_id), "name": obj.brand.name, "logoUrl": obj.brand.logo_url}
+        return brand_public(obj.brand)
 
     def get_creator(self, obj: Order) -> dict[str, Any]:
-        return {"id": str(obj.creator_id), "displayName": obj.creator.display_name, "avatarUrl": obj.creator.avatar_url}
+        return creator_public(obj.creator)
 
     def get_amounts(self, obj: Order) -> dict[str, Any]:
         return {

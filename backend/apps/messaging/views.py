@@ -1,12 +1,16 @@
+from datetime import date
 from uuid import UUID
 
-from drf_spectacular.utils import extend_schema
-from rest_framework import status
+from django.db.models import Count
+from django.db.models.functions import TruncDate
+from drf_spectacular.utils import extend_schema, inline_serializer
+from rest_framework import serializers, status
 from rest_framework.generics import ListAPIView
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.core.dates import IST, end_of_day_ist, start_of_day_ist
 from apps.core.exceptions import DomainError, NotFound
 from apps.core.pagination import EnvelopeCursorPagination
 from apps.identity.models import Role
@@ -75,7 +79,11 @@ class MessageListCreateView(ListAPIView):
         conversation = conversations_for(self.request.user).filter(pk=self.kwargs["conversation_id"]).first()
         if conversation is None:
             raise NotFound()
-        return Message.objects.filter(conversation=conversation).select_related("attachment")
+        qs = Message.objects.filter(conversation=conversation).select_related("attachment")
+        if day := self.request.query_params.get("date"):  # calendar: jump to one day (IST)
+            d = _parse_date(day)
+            qs = qs.filter(created_at__gte=start_of_day_ist(d), created_at__lte=end_of_day_ist(d))
+        return qs
 
     @extend_schema(request=MessageInput, responses={201: MessageOutput})
     def post(self, request: Request, conversation_id: UUID) -> Response:
@@ -97,3 +105,38 @@ class ConversationReadView(APIView):
     def post(self, request: Request, conversation_id: UUID) -> Response:
         services.mark_read(user=request.user, conversation_id=conversation_id)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+def _parse_date(value: str) -> date:
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise DomainError("Use a date like 2026-11-20.", code="INVALID_DATE") from None
+
+
+class ConversationDatesView(APIView):
+    """Calendar support: the IST days that have messages, with counts. Optional ?month=YYYY-MM."""
+
+    permission_classes = [IsBrandOrCreator]
+
+    @extend_schema(
+        responses=inline_serializer(
+            "MessageDay", {"date": serializers.DateField(), "count": serializers.IntegerField()}, many=True
+        )
+    )
+    def get(self, request: Request, conversation_id: UUID) -> Response:
+        conversation = conversations_for(request.user).filter(pk=conversation_id).first()
+        if conversation is None:
+            raise NotFound()
+        qs = Message.objects.filter(conversation=conversation)
+        if month := request.query_params.get("month"):
+            first = _parse_date(f"{month}-01")
+            nxt = date(first.year + (first.month == 12), first.month % 12 + 1, 1)
+            qs = qs.filter(created_at__gte=start_of_day_ist(first), created_at__lt=start_of_day_ist(nxt))
+        days = (
+            qs.annotate(day=TruncDate("created_at", tzinfo=IST))
+            .values("day")
+            .annotate(count=Count("id"))
+            .order_by("day")
+        )
+        return Response([{"date": d["day"].isoformat(), "count": d["count"]} for d in days])

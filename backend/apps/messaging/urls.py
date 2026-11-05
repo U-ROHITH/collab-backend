@@ -8,5 +8,6 @@ urlpatterns = [
     path("conversations/<uuid:conversation_id>/", views.ConversationDetailView.as_view()),
     path("conversations/<uuid:conversation_id>/messages/", views.MessageListCreateView.as_view()),
     path("conversations/<uuid:conversation_id>/read/", views.ConversationReadView.as_view()),
+    path("conversations/<uuid:conversation_id>/dates/", views.ConversationDatesView.as_view()),
     path("realtime/ticket/", RealtimeTicketView.as_view()),
 ]

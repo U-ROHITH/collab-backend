@@ -206,7 +206,7 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
   "deliverables": "1 Reel",
   "budgetMin": 500000,         // ₹5,000
   "budgetMax": 1500000,        // ₹15,000
-  "closesAt": "2026-11-20T18:30:00Z",
+  "closesAt": "2026-11-20",    // date only; closes end of day IST
   "usageRights": { … }
 }</pre></div>
         <div class="ex"><div class="ex-head"><span>Place a bid (creator)</span><button class="copy">Copy</button></div>
@@ -223,7 +223,7 @@ footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line)
   "creatorId": "01a1…",
   "deliverable": "1 Recipe Reel",
   "budget": 900000,
-  "deadline": "2026-11-30T18:30:00Z",
+  "deadline": "2026-11-30",    // date only
   "message": "Loved your last campaign!",
   "usageRights": { … }
 }</pre></div>
@@ -356,6 +356,7 @@ const GROUPS = [
   ]},
   { id: "brands", title: "Brand, lists & cart", note: "Brand profile, saved creator lists, and buying packages.", eps: [
     ["GET", "/v1/brands/me/", "brand", "Own brand profile."],
+    ["GET", "/v1/brands/{id}/", "creator, brand", "Brand profile card <code>{id, name, logoUrl, industry, website, city}</code>. Creators can open it once they have an offer, order or chat with that brand."],
     ["PATCH", "/v1/brands/me/", "brand", "<code>name, website, industry, legalName, gstin, stateCode, billingAddress{line1, line2?, city, state, pincode}</code>."],
     ["GET", "/v1/lists/", "brand", "Saved lists with <code>creatorCount</code>."],
     ["POST", "/v1/lists/", "brand", "<code>{name}</code>. Names are unique per brand."],
@@ -370,7 +371,7 @@ const GROUPS = [
     ["POST", "/v1/cart/checkout/", "brand", "<code>{usageRights}</code> → one order per item. Prices come from the server."],
   ]},
   { id: "campaigns", title: "Campaigns & bids", note: "Brands post campaigns; approved creators bid; the brand selects a bid to create an order.", eps: [
-    ["GET", "/v1/campaigns/", "brand, creator", "Brand: own campaigns (<code>?status=</code>). Approved creator: open campaigns. Also at <code>/v1/creators/me/campaigns/</code>."],
+    ["GET", "/v1/campaigns/", "brand, creator", "Brand: own campaigns (<code>?status=</code>). Approved creator: open campaigns, with <code>brand: null</code> (blind bidding; the brand is revealed on the order). Also at <code>/v1/creators/me/campaigns/</code>. <code>closesAt</code> and <code>createdAt</code> are dates (<code>YYYY-MM-DD</code>)."],
     ["POST", "/v1/campaigns/", "brand", "See “Create campaign” below. <code>status</code> is optional: <code>open</code> (default) or <code>draft</code>."],
     ["GET", "/v1/campaigns/{id}/", "brand, creator", "One campaign."],
     ["PATCH", "/v1/campaigns/{id}/", "brand", "Edit while draft or open."],
@@ -416,7 +417,8 @@ const GROUPS = [
     ["GET", "/v1/conversations/", "brand, creator", "My conversations with <code>withParty {type, id, name, image}</code>, <code>lastMessage</code>, <code>unread</code>, <code>updatedAt</code>."],
     ["POST", "/v1/conversations/", "brand, creator", "Brand sends <code>{creatorId}</code>, creator sends <code>{brandId}</code>. Returns the existing conversation if there is one. 422 <code>CONVERSATION_NOT_ALLOWED</code> without a bid, offer or order."],
     ["GET", "/v1/conversations/{id}/", "party", "One conversation with its summary."],
-    ["GET", "/v1/conversations/{id}/messages/", "party", "Newest first, 30 per page. Pass <code>meta.nextCursor</code> to load older ones."],
+    ["GET", "/v1/conversations/{id}/messages/", "party", "Newest first, 30 per page. Pass <code>meta.nextCursor</code> to load older ones. <code>?date=YYYY-MM-DD</code> returns one day. Each message has <code>sentDate</code> (<code>YYYY-MM-DD</code>, IST) and <code>sentTime</code> (<code>HH:MM</code>, IST) for day headers."],
+    ["GET", "/v1/conversations/{id}/dates/", "party", "For the calendar: <code>[{date, count}]</code> for days that have messages. Optional <code>?month=YYYY-MM</code>."],
     ["POST", "/v1/conversations/{id}/messages/", "party", "<code>{text?, attachmentUploadId?}</code>, at least one. Max 4,000 characters; 30 messages a minute."],
     ["POST", "/v1/conversations/{id}/read/", "party", "Mark the conversation as read (also clears its new-message notification)."],
     ["POST", "/v1/realtime/ticket/", "brand, creator", "<code>{ticket, expiresIn: 30, path: \"/ws/\"}</code>. Connect to <code>wss://collab-api-ewju.onrender.com/ws/?ticket=…</code> within 30 seconds. Each ticket works once."],

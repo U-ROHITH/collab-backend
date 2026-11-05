@@ -37,7 +37,7 @@ class CampaignListCreateView(ListAPIView):
         data = CampaignInput(data=request.data)
         data.is_valid(raise_exception=True)
         campaign = services.create_campaign(brand=my_brand(request), data=data.validated_data)
-        return Response(CampaignOutput(campaign).data, status=status.HTTP_201_CREATED)
+        return Response(CampaignOutput(campaign, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
 
 class CampaignDetailView(APIView):
@@ -49,7 +49,7 @@ class CampaignDetailView(APIView):
         campaign = services.campaigns_visible_to(request.user).select_related("brand").filter(pk=campaign_id).first()
         if campaign is None:
             raise NotFound()
-        return Response(CampaignOutput(campaign).data)
+        return Response(CampaignOutput(campaign, context={"request": request}).data)
 
     @extend_schema(request=CampaignInput, responses=CampaignOutput)
     def patch(self, request: Request, campaign_id: UUID) -> Response:
@@ -58,7 +58,7 @@ class CampaignDetailView(APIView):
         data = CampaignInput(data=request.data, partial=True)
         data.is_valid(raise_exception=True)
         campaign = services.update_campaign(brand=my_brand(request), campaign_id=campaign_id, data=data.validated_data)
-        return Response(CampaignOutput(campaign).data)
+        return Response(CampaignOutput(campaign, context={"request": request}).data)
 
 
 class CampaignCloseView(APIView):
@@ -66,7 +66,12 @@ class CampaignCloseView(APIView):
 
     @extend_schema(request=None, responses=CampaignOutput)
     def post(self, request: Request, campaign_id: UUID) -> Response:
-        return Response(CampaignOutput(services.close_campaign(brand=my_brand(request), campaign_id=campaign_id)).data)
+        return Response(
+            CampaignOutput(
+                services.close_campaign(brand=my_brand(request), campaign_id=campaign_id),
+                context={"request": request},
+            ).data
+        )
 
 
 class BidListCreateView(ListAPIView):

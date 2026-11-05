@@ -119,3 +119,22 @@ def checkout_cart(*, brand: Brand, actor: User, usage_rights: dict[str, Any]) ->
             )
         CartItem.objects.filter(pk__in=[i.pk for i in items]).delete()
     return orders
+
+
+def can_view_brand(user: User, brand: Brand) -> bool:
+    """Creators see a brand once there's an offer, order or conversation between them (not via bids)."""
+    from apps.identity.models import Role
+    from apps.messaging.models import Conversation
+    from apps.offers.models import Offer
+    from apps.orders.models import Order
+
+    if user.role == Role.BRAND:
+        return brand.owner_id == user.pk
+    creator = getattr(user, "creator", None)
+    if creator is None:
+        return False
+    return (
+        Order.objects.filter(brand=brand, creator=creator).exists()
+        or Offer.objects.filter(brand=brand, creator=creator).exists()
+        or Conversation.objects.filter(brand=brand, creator=creator).exists()
+    )

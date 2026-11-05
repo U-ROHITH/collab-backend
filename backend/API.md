@@ -5,6 +5,13 @@ Live base URL: **https://collab-api-ewju.onrender.com**
 Interactive docs: run the server and open **`/v1/docs/`** (Swagger, dev only). Raw schema: `/v1/schema/`.
 React apps should generate types from the schema: `npx openapi-typescript http://localhost:8000/v1/schema/ -o src/api/schema.ts`.
 
+## Changes on 2026-11-05 (frontend feedback)
+- **Blind bidding:** creators get `brand: null` on campaigns (`GET /v1/campaigns/`, `/v1/campaigns/{id}/`). The brand is revealed on the order once a bid is selected.
+- **Date only:** `closesAt` (campaigns), `createdAt` (campaigns, bids, offers), `deadline` (offers, orders) are `YYYY-MM-DD`. Send `closesAt`/`deadline` as `YYYY-MM-DD`; they mean "end of that day, India time".
+- **Both sides see profiles:** `creator` on orders/offers/bids is a full card (`displayName, avatarUrl, bio, categories, location, primaryPlatform, repliesWithin, verified, followerCount, rating, reviewCount`). `brand` on orders/offers is `{id, name, logoUrl, industry, website, city}`. Conversations include `withParty.profile`. Phone and email are never shared.
+- `GET /v1/brands/{id}/`: brand profile card. Creators can open it once they have an offer, order or conversation with that brand.
+- **Message calendar:** each message has `sentDate` (`YYYY-MM-DD`, IST) and `sentTime` (`HH:MM`, IST). `GET /v1/conversations/{id}/messages/?date=YYYY-MM-DD` loads one day. `GET /v1/conversations/{id}/dates/?month=YYYY-MM` returns `[{date, count}]` for days with messages.
+
 ## Conventions
 - Auth header: `Authorization: Bearer <access>` (15-minute access token; refresh with `/v1/auth/token/refresh/`).
 - Every response: `{ "success", "data", "error", "meta" }`. Errors: `error.code` (stable, switch on it), `error.message`, `error.requestId`, plus `error.details` (field errors) on validation failures.
