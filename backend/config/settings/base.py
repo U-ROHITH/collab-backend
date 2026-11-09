@@ -219,6 +219,10 @@ OTP_DELIVERY = env("OTP_DELIVERY", default="live")  # "live" | "console" (consol
 OTP_TTL_SECONDS = 300
 OTP_MAX_ATTEMPTS = 5
 OTP_MAX_PER_DESTINATION_PER_HOUR = 5
+# Test logins (QA, app-store review): these destinations get OTP_TEST_CODE instead of a real SMS/email
+# and skip the hourly limit. Normalized form: +91XXXXXXXXXX or lower-case email. Empty both before launch.
+OTP_TEST_ACCOUNTS = env.list("OTP_TEST_ACCOUNTS", default=[])
+OTP_TEST_CODE = env("OTP_TEST_CODE", default="")
 TWO_FACTOR_API_KEY = env("TWO_FACTOR_API_KEY", default="")
 RESEND_API_KEY = env("RESEND_API_KEY", default="")
 RESEND_FROM_EMAIL = env("RESEND_FROM_EMAIL", default="")

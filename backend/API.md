@@ -159,5 +159,7 @@ Events: `{event: "connected"}`, `{event: "new_message", conversationId, message}
 ## Ops (Django admin, not an API)
 At `/<DJANGO_ADMIN_URL>`, with TOTP 2FA. Setup: `uv run python manage.py grant_admin you@company.com`, then `uv run python manage.py add_totp you@company.com`. Approve/reject creators via the admin actions. KYC review: **Kyc profiles** → open the ID document (signed link, 5 min) → run *Verify*, or type a *Rejection reason*, save, then run *Reject*. Orders are read-only there.
 
+**Test logins (QA / app-store review):** Render env `OTP_TEST_ACCOUNTS` (comma-separated `+91XXXXXXXXXX` or lower-case emails) and `OTP_TEST_CODE` (6 digits, required when the list is set). Those destinations get no SMS/email; the code is always `OTP_TEST_CODE`, and the hourly limit doesn't apply (the per-IP limit still does). The normal OTP flow is unchanged. **Empty both before public launch.**
+
 ## Not built yet (next phases)
 Razorpay payments/escrow/payouts/refunds + webhook, GST invoice / TDS statement PDFs, web push + email notifications, Instagram/YouTube connect, brand dashboard/reporting, admin APIs for disputes/refunds, Celery jobs (auto-approve, payment expiry).

@@ -145,3 +145,44 @@ def test_unauthenticated_and_garbage_tokens(anon: APIClient) -> None:
     anon.credentials(HTTP_AUTHORIZATION="Bearer not.a.jwt")
     r = anon.get("/v1/auth/me/")
     assert r.status_code == 401 and r.json()["success"] is False
+
+
+# --- test accounts with a fixed code (for QA / app-store review) ---------------------------------
+
+TEST_PHONE = "+916302624130"
+
+
+@pytest.fixture
+def test_accounts(settings: Any) -> None:
+    settings.OTP_TEST_ACCOUNTS = [TEST_PHONE, "qa@example.com"]
+    settings.OTP_TEST_CODE = "482913"
+
+
+def test_test_account_signs_in_with_fixed_code(anon: APIClient, sent_codes: list[str], test_accounts: None) -> None:
+    challenge = _request(anon, "63026 24130").json()["data"]["challengeId"]
+    assert sent_codes == []  # no SMS sent
+    resp = anon.post("/v1/auth/otp/verify/", {"challengeId": challenge, "code": "482913"}, format="json")
+    assert resp.status_code == 200 and resp.json()["data"]["user"]["phone"] == TEST_PHONE
+
+
+def test_test_account_email_and_wrong_code(anon: APIClient, sent_codes: list[str], test_accounts: None) -> None:
+    challenge = _request(anon, "QA@example.com", channel="email").json()["data"]["challengeId"]
+    bad = anon.post("/v1/auth/otp/verify/", {"challengeId": challenge, "code": "000000"}, format="json")
+    assert bad.status_code == 400 and sent_codes == []
+
+
+def test_test_account_skips_hourly_limit(anon: APIClient, sent_codes: list[str], test_accounts: None) -> None:
+    for _ in range(8):
+        assert _request(anon, TEST_PHONE).status_code == 202
+
+
+def test_other_numbers_still_get_real_codes(anon: APIClient, sent_codes: list[str], test_accounts: None) -> None:
+    _request(anon, "9876543210")
+    assert len(sent_codes) == 1
+
+
+def test_no_fixed_code_without_both_settings(anon: APIClient, sent_codes: list[str], settings: Any) -> None:
+    settings.OTP_TEST_ACCOUNTS = [TEST_PHONE]
+    settings.OTP_TEST_CODE = ""
+    _request(anon, TEST_PHONE)
+    assert len(sent_codes) == 1  # falls back to a real SMS

@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import logging
 import re
 import secrets
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from apps.core.exceptions import Conflict, DomainError, TooManyRequests
 from apps.identity import google, providers
 from apps.identity.models import AuditLog, OtpChallenge, OtpChannel, Role, User
 
+logger = logging.getLogger(__name__)
 _INDIAN_MOBILE = re.compile(r"^(?:\+?91)?([6-9]\d{9})$")
 
 
@@ -45,14 +47,23 @@ def _hash_code(challenge_id: UUID, code: str) -> str:
     return hmac.new(key, f"{challenge_id}:{code}".encode(), hashlib.sha256).hexdigest()
 
 
+def _test_code_for(dest: str) -> str | None:
+    """Fixed code for configured test logins (QA / app-store review), else None."""
+    code = settings.OTP_TEST_CODE
+    if code and re.fullmatch(r"\d{6}", code) and dest in {d.strip().lower() for d in settings.OTP_TEST_ACCOUNTS}:
+        return code
+    return None
+
+
 def request_otp(*, channel: str, destination: str, ip: str | None) -> OtpChallenge:
     dest = normalize_destination(channel, destination)
     now = timezone.now()
+    test_code = _test_code_for(dest)
     recent = OtpChallenge.objects.filter(destination=dest, created_at__gte=now - timedelta(hours=1)).count()
-    if recent >= settings.OTP_MAX_PER_DESTINATION_PER_HOUR:
+    if test_code is None and recent >= settings.OTP_MAX_PER_DESTINATION_PER_HOUR:
         raise TooManyRequests("Too many codes requested. Try again in an hour.")
 
-    code = f"{secrets.randbelow(1_000_000):06d}"
+    code = test_code or f"{secrets.randbelow(1_000_000):06d}"
     with transaction.atomic():
         # Only the newest code is valid.
         OtpChallenge.objects.filter(destination=dest, consumed_at__isnull=True).update(consumed_at=now)
@@ -65,6 +76,9 @@ def request_otp(*, channel: str, destination: str, ip: str | None) -> OtpChallen
         challenge.code_hash = _hash_code(challenge.id, code)
         challenge.save()
 
+    if test_code is not None:
+        logger.warning("Test login code issued for a configured test account (challenge %s)", challenge.id)
+        return challenge
     try:
         if channel == OtpChannel.SMS:
             providers.send_sms_otp(dest, code)
