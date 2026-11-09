@@ -19,7 +19,7 @@ class CreatorAdmin(admin.ModelAdmin):
     search_fields = ("display_name", "slug", "location")
     readonly_fields = ("id", "user", "approval_status", "rating_sum", "rating_count", "created_at", "updated_at")
     inlines = [PackageInline]
-    actions = ["approve", "reject"]
+    actions = ["approve", "reject", "mark_verified", "mark_unverified"]
 
     @admin.action(description="Approve selected creators")
     def approve(self, request: HttpRequest, queryset: QuerySet[Creator]) -> None:
@@ -32,3 +32,13 @@ class CreatorAdmin(admin.ModelAdmin):
         for creator in queryset:
             services.set_approval(actor=request.user, creator_id=creator.pk, status=ApprovalStatus.REJECTED)
         self.message_user(request, f"Rejected {queryset.count()} creator(s).", messages.WARNING)
+
+    @admin.action(description="Mark selected creators as verified")
+    def mark_verified(self, request: HttpRequest, queryset: QuerySet[Creator]) -> None:
+        queryset.update(verified=True)
+        self.message_user(request, f"Marked {queryset.count()} creator(s) as verified.", messages.SUCCESS)
+
+    @admin.action(description="Mark selected creators as unverified")
+    def mark_unverified(self, request: HttpRequest, queryset: QuerySet[Creator]) -> None:
+        queryset.update(verified=False)
+        self.message_user(request, f"Marked {queryset.count()} creator(s) as unverified.", messages.WARNING)
