@@ -12,7 +12,7 @@ from django.utils import timezone
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.core.exceptions import Conflict, DomainError, TooManyRequests
-from apps.identity import providers
+from apps.identity import google, providers
 from apps.identity.models import AuditLog, OtpChallenge, OtpChannel, Role, User
 
 _INDIAN_MOBILE = re.compile(r"^(?:\+?91)?([6-9]\d{9})$")
@@ -103,6 +103,39 @@ def verify_otp(*, challenge_id: UUID, code: str) -> AuthResult:
     user = _get_or_create_user(challenge.channel, challenge.destination)
     if not user.is_active:
         raise OtpInvalid()
+    return issue_tokens(user)
+
+
+class GoogleSignInFailed(DomainError):
+    status_code = 401
+    code = "GOOGLE_TOKEN_INVALID"
+    message = "Google sign-in failed. Please try again."
+
+
+def google_sign_in(*, id_token: str, role: str | None) -> AuthResult:
+    """Sign in (or sign up) with a Google ID token.
+
+    The account is matched on the Google-verified email, so a person who used email OTP before lands
+    in the same account. `role` only applies to an account that hasn't picked one yet; an existing
+    account keeps its role (the frontend reads `user.role` from the response).
+    """
+    try:
+        claims = google.verify_id_token(id_token)
+    except google.GoogleTokenError:
+        raise GoogleSignInFailed() from None
+    email = str(claims.get("email") or "").strip().lower()
+    if not email or claims.get("email_verified") is not True:
+        raise GoogleSignInFailed("Your Google account's email isn't verified.", code="GOOGLE_EMAIL_UNVERIFIED")
+
+    user = _get_or_create_user(OtpChannel.EMAIL, email)
+    if not user.is_active:
+        raise GoogleSignInFailed()
+    if user.role is None and role:
+        name = str(claims.get("name") or "").strip()[:120] or email.split("@")[0]
+        try:
+            user = complete_signup(user=user, role=role, full_name=name)
+        except Conflict:  # a concurrent request finished signup first
+            user = User.objects.get(pk=user.pk)
     return issue_tokens(user)
 
 

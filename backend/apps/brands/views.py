@@ -23,6 +23,7 @@ from apps.brands.serializers import (
 from apps.core.exceptions import NotFound
 from apps.core.parties import brand_public
 from apps.identity.permissions import IsBrand, IsBrandOrCreator
+from apps.kyc.services import require_verified as require_kyc
 from apps.orders.serializers import OrderOutput
 
 
@@ -147,6 +148,7 @@ class CheckoutView(APIView):
 
     @extend_schema(request=CheckoutInput, responses={201: OrderOutput(many=True)})
     def post(self, request: Request) -> Response:
+        require_kyc(request.user)
         data = CheckoutInput(data=request.data)
         data.is_valid(raise_exception=True)
         orders = services.checkout_cart(

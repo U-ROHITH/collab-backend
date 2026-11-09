@@ -16,6 +16,7 @@ class UploadKind(models.TextChoices):
     GALLERY = "gallery"  # creator portfolio image  -> public, re-encoded
     DELIVERABLE = "deliverable"  # draft files       -> private
     CHAT_ATTACHMENT = "chat_attachment"  # message files -> private
+    KYC_DOCUMENT = "kyc_document"  # ID proof for KYC -> private, owner + staff only
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,7 @@ RULES: dict[str, KindRule] = {
         (*IMAGE_TYPES, "application/pdf", "video/mp4", "video/quicktime"), 50 * MB, public=False, role="creator"
     ),
     UploadKind.CHAT_ATTACHMENT: KindRule((*IMAGE_TYPES, "application/pdf"), 10 * MB, public=False, role=None),
+    UploadKind.KYC_DOCUMENT: KindRule((*IMAGE_TYPES, "application/pdf"), 10 * MB, public=False, role=None),
 }
 
 EXTENSIONS = {

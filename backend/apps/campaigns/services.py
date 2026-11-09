@@ -31,15 +31,32 @@ _BID_FIELDS = {
 }
 
 
-def campaigns_visible_to(user: User) -> QuerySet[Campaign]:
-    if user.role == Role.BRAND:
+def public_open_campaigns() -> QuerySet[Campaign]:
+    return Campaign.objects.filter(status=CampaignStatus.OPEN, closes_at__gt=timezone.now())
+
+
+def sees_full_campaigns(user: User | None) -> bool:
+    """Brands (own campaigns) and approved creators get full details; everyone else gets the guest view."""
+    role = getattr(user, "role", None)
+    if role == Role.BRAND:
+        return True
+    creator = getattr(user, "creator", None) if role == Role.CREATOR else None
+    return bool(creator and creator.is_approved)
+
+
+def campaigns_visible_to(user: User | None) -> QuerySet[Campaign]:
+    if getattr(user, "role", None) == Role.BRAND:
         return Campaign.objects.filter(brand__owner=user)
-    if user.role == Role.CREATOR:
-        creator = getattr(user, "creator", None)
-        if creator is None or not creator.is_approved:
-            return Campaign.objects.none()
-        return Campaign.objects.filter(status=CampaignStatus.OPEN, closes_at__gt=timezone.now())
+    if sees_full_campaigns(user):
+        return public_open_campaigns()
     return Campaign.objects.none()
+
+
+def campaigns_listed_for(user: User | None) -> QuerySet[Campaign]:
+    """GET /campaigns/: guests, unapproved creators and users mid-signup get the public open list."""
+    if getattr(user, "role", None) == Role.BRAND or sees_full_campaigns(user):
+        return campaigns_visible_to(user)
+    return public_open_campaigns()
 
 
 def _check_budget(min_p: int, max_p: int) -> None:

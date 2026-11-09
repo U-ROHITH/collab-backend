@@ -93,6 +93,18 @@ def envelope_exception_handler(exc: Exception, context: dict[str, Any]) -> Respo
     if isinstance(exc, drf_exc.ValidationError):
         response.data = _envelope(code, "Invalid input.", request_id, details=exc.detail)
     else:
-        detail = getattr(exc, "detail", "Error.")
-        response.data = _envelope(code, str(detail), request_id)
+        response.data = _envelope(code, _plain_message(exc), request_id)
     return response
+
+
+def _plain_message(exc: Exception) -> str:
+    """A human sentence for the envelope. Some exceptions (simplejwt's InvalidToken) carry a dict
+    or list as `detail`; str() on those leaks Python reprs like "ErrorDetail(string=...)"."""
+    from rest_framework_simplejwt.exceptions import InvalidToken
+
+    if isinstance(exc, InvalidToken):
+        return "Your session has expired or is invalid. Please sign in again."
+    detail: Any = getattr(exc, "detail", None)
+    while isinstance(detail, dict | list) and detail:
+        detail = detail.get("detail") if isinstance(detail, dict) else detail[0]
+    return str(detail) if detail else "Error."

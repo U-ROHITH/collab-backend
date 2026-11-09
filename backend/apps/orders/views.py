@@ -1,8 +1,8 @@
 from uuid import UUID
 
 from django.conf import settings
-from drf_spectacular.utils import extend_schema
-from rest_framework import status
+from drf_spectacular.utils import extend_schema, inline_serializer
+from rest_framework import serializers, status
 from rest_framework.generics import ListAPIView
 from rest_framework.permissions import BasePermission
 from rest_framework.request import Request
@@ -14,7 +14,7 @@ from apps.creators.selectors import get_public_creator
 from apps.identity.permissions import IsBrand, IsBrandOrCreator, IsCreator
 from apps.orders import services
 from apps.orders.models import Review
-from apps.orders.selectors import orders_visible_to
+from apps.orders.selectors import creator_earnings, orders_visible_to
 from apps.orders.serializers import (
     DeliverableInput,
     DeliverableOutput,
@@ -174,3 +174,43 @@ class DevSimulatePaymentView(APIView):
     def post(self, request: Request, order_id: UUID) -> Response:
         _visible_order(request, order_id)
         return Response(_out(services.system_event(order_id=order_id, event="fund", reason="dev simulate"), request))
+
+
+def _money(paise: int) -> dict:
+    return {"amount": paise, "currency": "INR"}
+
+
+class CreatorEarningsView(APIView):
+    """Creator's earnings summary. `payoutsEnabled` is false until Razorpay Route payouts ship;
+    hide withdraw/payout-history screens until it flips."""
+
+    permission_classes = [IsCreator]
+
+    @extend_schema(
+        responses=inline_serializer(
+            "CreatorEarnings",
+            {
+                "inEscrow": serializers.JSONField(),
+                "earned": serializers.JSONField(),
+                "tdsDeducted": serializers.JSONField(),
+                "ordersInEscrow": serializers.IntegerField(),
+                "ordersEarned": serializers.IntegerField(),
+                "payoutsEnabled": serializers.BooleanField(),
+            },
+        )
+    )
+    def get(self, request: Request) -> Response:
+        creator = getattr(request.user, "creator", None)
+        if creator is None:
+            raise NotFound("Creator profile not found.")
+        t = creator_earnings(creator.pk)
+        return Response(
+            {
+                "inEscrow": _money(t["in_escrow"]),
+                "earned": _money(t["earned"]),
+                "tdsDeducted": _money(t["tds_deducted"]),
+                "ordersInEscrow": t["orders_in_escrow"],
+                "ordersEarned": t["orders_earned"],
+                "payoutsEnabled": settings.PAYOUTS_ENABLED,
+            }
+        )

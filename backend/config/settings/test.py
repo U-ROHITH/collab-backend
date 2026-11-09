@@ -20,3 +20,5 @@ SUPABASE_SERVICE_ROLE_KEY = "test-service-key"
 _test_db_host = DATABASES["default"].get("HOST", "")  # noqa: F405
 if _test_db_host not in ("localhost", "127.0.0.1", "postgres", ""):
     raise RuntimeError(f"Refusing to run tests against non-local database host {_test_db_host!r}.")
+
+DATA_ENCRYPTION_KEY = "test-only-encryption-key-not-a-secret"

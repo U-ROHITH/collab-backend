@@ -14,6 +14,7 @@ from apps.core.exceptions import DomainError
 from apps.identity import services
 from apps.identity.serializers import (
     AuthTokensOutput,
+    GoogleSignInInput,
     MeOutput,
     OtpRequestInput,
     OtpRequestOutput,
@@ -56,6 +57,23 @@ class OtpVerifyView(APIView):
         data = OtpVerifyInput(data=request.data)
         data.is_valid(raise_exception=True)
         result = services.verify_otp(challenge_id=data.validated_data["challengeId"], code=data.validated_data["code"])
+        return Response(
+            AuthTokensOutput({"access": result.access, "refresh": result.refresh, "user": result.user}).data
+        )
+
+
+class GoogleSignInView(APIView):
+    """POST {idToken, role?} -> {access, refresh, user}, same shape as OTP verify."""
+
+    authentication_classes: list = []
+    permission_classes = [AllowAny]
+    throttle_scope = "otp_verify"
+
+    @extend_schema(request=GoogleSignInInput, responses=AuthTokensOutput)
+    def post(self, request: Request) -> Response:
+        data = GoogleSignInInput(data=request.data)
+        data.is_valid(raise_exception=True)
+        result = services.google_sign_in(id_token=data.validated_data["idToken"], role=data.validated_data.get("role"))
         return Response(
             AuthTokensOutput({"access": result.access, "refresh": result.refresh, "user": result.user}).data
         )

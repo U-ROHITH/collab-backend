@@ -3,6 +3,7 @@ from uuid import UUID
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.generics import ListAPIView
+from rest_framework.permissions import SAFE_METHODS
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -14,26 +15,38 @@ from apps.campaigns.serializers import BidInput, BidOutput, CampaignInput, Campa
 from apps.core.exceptions import NotFound
 from apps.identity.models import Role
 from apps.identity.permissions import IsApprovedCreator, IsBrand, IsBrandOrCreator
+from apps.kyc.services import require_verified as require_kyc
 from apps.orders.serializers import OrderOutput
 
 
-class CampaignListCreateView(ListAPIView):
-    """GET: brand -> its campaigns; approved creator -> open campaigns. POST: brand creates."""
+class _PublicReadOrBrandOrCreator(IsBrandOrCreator):
+    def has_permission(self, request: Request, view: object) -> bool:
+        return request.method in SAFE_METHODS or super().has_permission(request, view)
 
-    permission_classes = [IsBrandOrCreator]
+
+class CampaignListCreateView(ListAPIView):
+    """GET: brand -> its campaigns; approved creator -> open campaigns; anyone else (guests included)
+    -> open campaigns with the brief and usage rights hidden. POST: brand creates."""
+
+    permission_classes = [_PublicReadOrBrandOrCreator]
     serializer_class = CampaignOutput
     throttle_scope = "writes"
 
     def get_queryset(self):  # type: ignore[no-untyped-def]
-        qs = services.campaigns_visible_to(self.request.user).select_related("brand")
-        if (s := self.request.query_params.get("status")) and self.request.user.role == Role.BRAND:
+        user = self.request.user
+        qs = services.campaigns_listed_for(user).select_related("brand")
+        if (s := self.request.query_params.get("status")) and getattr(user, "role", None) == Role.BRAND:
             qs = qs.filter(status=s)
         return qs
+
+    def get_serializer_context(self) -> dict:
+        return {**super().get_serializer_context(), "guest": not services.sees_full_campaigns(self.request.user)}
 
     @extend_schema(request=CampaignInput, responses={201: CampaignOutput})
     def post(self, request: Request) -> Response:
         if not IsBrand().has_permission(request, self):
             raise NotFound()
+        require_kyc(request.user)
         data = CampaignInput(data=request.data)
         data.is_valid(raise_exception=True)
         campaign = services.create_campaign(brand=my_brand(request), data=data.validated_data)
@@ -95,6 +108,7 @@ class BidListCreateView(ListAPIView):
     def post(self, request: Request, campaign_id: UUID) -> Response:
         if not IsApprovedCreator().has_permission(request, self):
             raise NotFound()
+        require_kyc(request.user)
         data = BidInput(data=request.data)
         data.is_valid(raise_exception=True)
         bid = services.create_bid(creator=request.user.creator, campaign_id=campaign_id, data=data.validated_data)

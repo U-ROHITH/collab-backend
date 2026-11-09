@@ -32,6 +32,9 @@ def create_order(
     deadline: Any = None,
 ) -> Order:
     """Called by bids/offers/cart inside their transaction. Amounts are computed here, server-side."""
+    from apps.kyc.services import require_order_parties_verified
+
+    require_order_parties_verified(actor=actor, brand_owner=brand.owner, creator_user=creator.user)
     cfg = FeeConfig.from_dict(settings.FEE_CONFIG)
     amounts = compute_order_amounts(subtotal_paise, cfg)
     try:

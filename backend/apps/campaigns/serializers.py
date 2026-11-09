@@ -12,7 +12,8 @@ from apps.identity.models import Role
 
 
 class CampaignOutput(serializers.ModelSerializer):
-    """Creators bid blind: `brand` is null for creators. They learn the brand once an order exists."""
+    """Creators bid blind: `brand` is null for creators. They learn the brand once an order exists.
+    With context["guest"] (signed-out, mid-signup, unapproved creator) `brief` and `usageRights` are null."""
 
     brand = serializers.SerializerMethodField()
     budgetMin = serializers.SerializerMethodField()  # noqa: N815
@@ -37,6 +38,14 @@ class CampaignOutput(serializers.ModelSerializer):
             "brand",
             "createdAt",
         )
+
+    def to_representation(self, instance: Campaign) -> dict[str, Any]:
+        data = super().to_representation(instance)
+        if self.context.get("guest"):
+            # Guest view: enough to browse, not the brand's working brief.
+            data["brief"] = None
+            data["usageRights"] = None
+        return data
 
     def get_brand(self, obj: Campaign) -> dict[str, Any] | None:
         request = self.context.get("request")

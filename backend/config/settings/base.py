@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     "apps.notifications",
     "apps.uploads",
     "apps.messaging",
+    "apps.kyc",
     "apps.realtime",
 ]
 
@@ -196,6 +197,22 @@ SPECTACULAR_SETTINGS = {
     "CAMELIZE_NAMES": False,
     "ENUM_NAME_OVERRIDES": {"PlatformEnum": "apps.creators.models.Platform"},
 }
+
+# --- KYC / field encryption -----------------------------------------------------------------------
+DATA_ENCRYPTION_KEY = env("DATA_ENCRYPTION_KEY", default="")
+DATA_ENCRYPTION_KEY_VERSION = env.int("DATA_ENCRYPTION_KEY_VERSION", default=1)
+# Kill switch: when False, bids/offers/checkout/campaign creation no longer require verified KYC.
+KYC_ENFORCED = env.bool("KYC_ENFORCED", default=True)
+# Payouts (Razorpay Route) aren't built. Stays False so the app hides withdraw/payout screens.
+PAYOUTS_ENABLED = False
+
+# --- Google sign-in -------------------------------------------------------------------------------
+# OAuth client IDs are public (they ship in the frontend bundle), so a default is fine. Comma-separate
+# to accept tokens minted for several clients (web, Android, iOS).
+GOOGLE_OAUTH_CLIENT_IDS = env.list(
+    "GOOGLE_OAUTH_CLIENT_IDS",
+    default=["1042168589486-k7e30v1tao2ooepsb5lp339m7anlvq44.apps.googleusercontent.com"],
+)
 
 # --- OTP / messaging providers ----------------------------------------------------------------
 OTP_DELIVERY = env("OTP_DELIVERY", default="live")  # "live" | "console" (console only allowed with DEBUG)

@@ -9,6 +9,7 @@ from rest_framework.views import APIView
 
 from apps.brands.views import my_brand
 from apps.identity.permissions import IsBrand, IsCreator
+from apps.kyc.services import require_verified as require_kyc
 from apps.offers import services
 from apps.offers.models import Offer
 from apps.offers.serializers import OfferInput, OfferOutput, OfferResponseInput
@@ -28,6 +29,7 @@ class BrandOffersView(ListAPIView):
 
     @extend_schema(request=OfferInput, responses={201: OfferOutput})
     def post(self, request: Request) -> Response:
+        require_kyc(request.user)
         data = OfferInput(data=request.data)
         data.is_valid(raise_exception=True)
         offer = services.send_offer(brand=my_brand(request), data=data.validated_data)
@@ -64,6 +66,8 @@ class CreatorOfferRespondView(APIView):
     def patch(self, request: Request, offer_id: UUID) -> Response:
         data = OfferResponseInput(data=request.data)
         data.is_valid(raise_exception=True)
+        if data.validated_data["status"] == "accepted":  # declining never needs KYC
+            require_kyc(request.user)
         offer, order = services.respond_to_offer(
             actor=request.user,
             creator=request.user.creator,

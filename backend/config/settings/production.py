@@ -14,8 +14,11 @@ if any("*" in o or o.startswith("http://") for o in CORS_ALLOWED_ORIGINS):
     raise ImproperlyConfigured("CORS origins must be exact https origins in production.")
 if OTP_DELIVERY != "live":
     raise ImproperlyConfigured("OTP_DELIVERY must be 'live' in production.")
+if len(env("DATA_ENCRYPTION_KEY", default="")) < 32:
+    raise ImproperlyConfigured("DATA_ENCRYPTION_KEY must be at least 32 chars in production.")
 for required in (
     "JWT_SIGNING_KEY",
+    "DATA_ENCRYPTION_KEY",
     "TWO_FACTOR_API_KEY",
     "RESEND_API_KEY",
     "SUPABASE_URL",

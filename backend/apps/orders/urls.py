@@ -5,6 +5,7 @@ from apps.orders import views
 urlpatterns = [
     path("orders/", views.OrderListView.as_view()),
     path("creators/me/orders/", views.OrderListView.as_view()),
+    path("creators/me/earnings/", views.CreatorEarningsView.as_view()),
     path("orders/<uuid:order_id>/", views.OrderDetailView.as_view()),
     path("orders/<uuid:order_id>/deliverables/", views.DeliverablesView.as_view()),
     path("orders/<uuid:order_id>/revisions/", views.RevisionView.as_view()),

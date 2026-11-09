@@ -20,6 +20,8 @@ dependencies = [
   "pillow>=13.0.0",
   "channels>=4.1",
   "channels-redis>=4.2",
+  "google-auth>=2.30",
+  "cryptography>=43",
 ]
 
 [dependency-groups]

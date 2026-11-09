@@ -3,6 +3,28 @@ info:
   title: Collab API
   version: 1.0.0
 paths:
+  /v1/auth/google/:
+    post:
+      operationId: auth_google_create
+      description: POST {idToken, role?} -> {access, refresh, user}, same shape as
+        OTP verify.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoogleSignInInputRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokensOutput'
+          description: ''
   /v1/auth/logout/:
     post:
       operationId: auth_logout_create
@@ -185,8 +207,9 @@ paths:
   /v1/campaigns/:
     get:
       operationId: campaigns_list
-      description: 'GET: brand -> its campaigns; approved creator -> open campaigns.
-        POST: brand creates.'
+      description: |-
+        GET: brand -> its campaigns; approved creator -> open campaigns; anyone else (guests included)
+        -> open campaigns with the brief and usage rights hidden. POST: brand creates.
       parameters:
       - name: cursor
         required: false
@@ -213,8 +236,9 @@ paths:
           description: ''
     post:
       operationId: campaigns_create
-      description: 'GET: brand -> its campaigns; approved creator -> open campaigns.
-        POST: brand creates.'
+      description: |-
+        GET: brand -> its campaigns; approved creator -> open campaigns; anyone else (guests included)
+        -> open campaigns with the brief and usage rights hidden. POST: brand creates.
       tags:
       - campaigns
       requestBody:
@@ -691,8 +715,8 @@ paths:
   /v1/creators/:
     get:
       operationId: creators_list
-      description: 'Discovery: approved creators only. Visible to signed-up brands
-        and creators.'
+      description: 'Discovery: approved creators only. Public (guest view); the card
+        never includes contact or payout info.'
       parameters:
       - in: query
         name: category
@@ -760,6 +784,7 @@ paths:
       - creators
       security:
       - bearerAuth: []
+      - {}
       responses:
         '200':
           content:
@@ -770,6 +795,7 @@ paths:
   /v1/creators/{creator_id}/:
     get:
       operationId: creators_retrieve
+      description: Public profile of an approved creator (guest view).
       parameters:
       - in: path
         name: creator_id
@@ -781,6 +807,7 @@ paths:
       - creators
       security:
       - bearerAuth: []
+      - {}
       responses:
         '200':
           content:
@@ -856,8 +883,9 @@ paths:
   /v1/creators/me/campaigns/:
     get:
       operationId: creators_me_campaigns_list
-      description: 'GET: brand -> its campaigns; approved creator -> open campaigns.
-        POST: brand creates.'
+      description: |-
+        GET: brand -> its campaigns; approved creator -> open campaigns; anyone else (guests included)
+        -> open campaigns with the brief and usage rights hidden. POST: brand creates.
       parameters:
       - name: cursor
         required: false
@@ -884,8 +912,9 @@ paths:
           description: ''
     post:
       operationId: creators_me_campaigns_create
-      description: 'GET: brand -> its campaigns; approved creator -> open campaigns.
-        POST: brand creates.'
+      description: |-
+        GET: brand -> its campaigns; approved creator -> open campaigns; anyone else (guests included)
+        -> open campaigns with the brief and usage rights hidden. POST: brand creates.
       tags:
       - creators
       requestBody:
@@ -902,6 +931,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CampaignOutput'
+          description: ''
+  /v1/creators/me/earnings/:
+    get:
+      operationId: creators_me_earnings_retrieve
+      description: |-
+        Creator's earnings summary. `payoutsEnabled` is false until Razorpay Route payouts ship;
+        hide withdraw/payout-history screens until it flips.
+      tags:
+      - creators
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatorEarnings'
           description: ''
   /v1/creators/me/media/{media_id}/:
     delete:
@@ -1128,6 +1174,95 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OrderOutput'
+          description: ''
+  /v1/kyc/:
+    get:
+      operationId: kyc_retrieve
+      description: GET the caller's KYC status and masked step details.
+      tags:
+      - kyc
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KycOutput'
+          description: ''
+  /v1/kyc/bank/:
+    put:
+      operationId: kyc_bank_update
+      tags:
+      - kyc
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BankInputRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KycOutput'
+          description: ''
+  /v1/kyc/id/:
+    put:
+      operationId: kyc_id_update
+      tags:
+      - kyc
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdDocumentInputRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KycOutput'
+          description: ''
+  /v1/kyc/pan/:
+    put:
+      operationId: kyc_pan_update
+      tags:
+      - kyc
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PanInputRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KycOutput'
+          description: ''
+  /v1/kyc/submit/:
+    post:
+      operationId: kyc_submit_create
+      tags:
+      - kyc
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KycOutput'
           description: ''
   /v1/lists/:
     get:
@@ -1764,6 +1899,26 @@ components:
       - access
       - refresh
       - user
+    BankInputRequest:
+      type: object
+      properties:
+        accountHolderName:
+          type: string
+          minLength: 1
+          maxLength: 120
+        accountNumber:
+          type: string
+          minLength: 1
+          description: 9-18 digits
+          pattern: ^\d{9,18}$
+        ifsc:
+          type: string
+          minLength: 1
+          maxLength: 11
+      required:
+      - accountHolderName
+      - accountNumber
+      - ifsc
     BidInputRequest:
       type: object
       properties:
@@ -1992,8 +2147,9 @@ components:
         * `open` - open
     CampaignOutput:
       type: object
-      description: 'Creators bid blind: `brand` is null for creators. They learn the
-        brand once an order exists.'
+      description: |-
+        Creators bid blind: `brand` is null for creators. They learn the brand once an order exists.
+        With context["guest"] (signed-out, mid-signup, unapproved creator) `brief` and `usageRights` are null.
       properties:
         id:
           type: string
@@ -2282,6 +2438,25 @@ components:
       - reviewCount
       - slug
       - startingPrice
+    CreatorEarnings:
+      type: object
+      properties:
+        inEscrow: {}
+        earned: {}
+        tdsDeducted: {}
+        ordersInEscrow:
+          type: integer
+        ordersEarned:
+          type: integer
+        payoutsEnabled:
+          type: boolean
+      required:
+      - earned
+      - inEscrow
+      - ordersEarned
+      - ordersInEscrow
+      - payoutsEnabled
+      - tdsDeducted
     CreatorSelfOutput:
       type: object
       description: Public view. Never includes contact details, payout info, or approval
@@ -2452,6 +2627,49 @@ components:
       required:
       - id
       - url
+    GoogleSignInInputRequest:
+      type: object
+      properties:
+        idToken:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        role:
+          nullable: true
+          description: |-
+            Used only when the account has no role yet (first sign-in).
+
+            * `brand` - brand
+            * `creator` - creator
+          oneOf:
+          - $ref: '#/components/schemas/RoleA83Enum'
+          - $ref: '#/components/schemas/NullEnum'
+      required:
+      - idToken
+    IdDocumentInputRequest:
+      type: object
+      properties:
+        idType:
+          $ref: '#/components/schemas/IdTypeEnum'
+        uploadId:
+          type: string
+          format: uuid
+          description: A READY upload of kind kyc_document
+      required:
+      - idType
+      - uploadId
+    IdTypeEnum:
+      enum:
+      - aadhaar
+      - passport
+      - driving_licence
+      - voter_id
+      type: string
+      description: |-
+        * `aadhaar` - Aadhaar
+        * `passport` - Passport
+        * `driving_licence` - Driving Licence
+        * `voter_id` - Voter Id
     KindEnum:
       enum:
       - avatar
@@ -2459,6 +2677,7 @@ components:
       - gallery
       - deliverable
       - chat_attachment
+      - kyc_document
       type: string
       description: |-
         * `avatar` - Avatar
@@ -2466,6 +2685,40 @@ components:
         * `gallery` - Gallery
         * `deliverable` - Deliverable
         * `chat_attachment` - Chat Attachment
+        * `kyc_document` - Kyc Document
+    KycOutput:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/KycOutputStatusEnum'
+        rejectionReason:
+          type: string
+          nullable: true
+        submittedAt:
+          type: string
+          format: date-time
+          nullable: true
+        steps:
+          $ref: '#/components/schemas/_Steps'
+      required:
+      - rejectionReason
+      - status
+      - steps
+      - submittedAt
+    KycOutputStatusEnum:
+      enum:
+      - not_started
+      - in_progress
+      - pending
+      - verified
+      - rejected
+      type: string
+      description: |-
+        * `not_started` - not_started
+        * `in_progress` - in_progress
+        * `pending` - pending
+        * `verified` - verified
+        * `rejected` - rejected
     ListAddCreatorInputRequest:
       type: object
       properties:
@@ -2556,9 +2809,14 @@ components:
           type: string
           nullable: true
           readOnly: true
+        kycStatus:
+          type: string
+          description: not_started | in_progress | pending | verified | rejected
+          readOnly: true
       required:
       - fullName
       - id
+      - kycStatus
       - needsOnboarding
       - profileId
     MeOutputRoleEnum:
@@ -3172,6 +3430,21 @@ components:
               nullable: true
             hasMore:
               type: boolean
+    PanInputRequest:
+      type: object
+      properties:
+        pan:
+          type: string
+          minLength: 1
+          description: 10 characters, e.g. ABCDE1234F
+          maxLength: 10
+        nameOnPan:
+          type: string
+          minLength: 1
+          maxLength: 120
+      required:
+      - nameOnPan
+      - pan
     PatchedBidInputRequest:
       type: object
       properties:
@@ -3419,11 +3692,19 @@ components:
       - date
       - id
       - stars
+    RoleA83Enum:
+      enum:
+      - brand
+      - creator
+      type: string
+      description: |-
+        * `brand` - brand
+        * `creator` - creator
     SignupCompleteInputRequest:
       type: object
       properties:
         role:
-          $ref: '#/components/schemas/SignupCompleteInputRoleEnum'
+          $ref: '#/components/schemas/RoleA83Enum'
         fullName:
           type: string
           minLength: 1
@@ -3437,14 +3718,6 @@ components:
       required:
       - fullName
       - role
-    SignupCompleteInputRoleEnum:
-      enum:
-      - brand
-      - creator
-      type: string
-      description: |-
-        * `brand` - brand
-        * `creator` - creator
     TokenRefresh:
       type: object
       properties:
@@ -3568,6 +3841,64 @@ components:
       - duration
       - exclusivity
       - territory
+    _BankStep:
+      type: object
+      properties:
+        done:
+          type: boolean
+        accountHolderName:
+          type: string
+          nullable: true
+        accountLast4:
+          type: string
+          nullable: true
+        ifsc:
+          type: string
+          nullable: true
+      required:
+      - accountHolderName
+      - accountLast4
+      - done
+      - ifsc
+    _IdStep:
+      type: object
+      properties:
+        done:
+          type: boolean
+        idType:
+          type: string
+          nullable: true
+      required:
+      - done
+      - idType
+    _PanStep:
+      type: object
+      properties:
+        done:
+          type: boolean
+        nameOnPan:
+          type: string
+          nullable: true
+        panLast4:
+          type: string
+          nullable: true
+      required:
+      - done
+      - nameOnPan
+      - panLast4
+    _Steps:
+      type: object
+      properties:
+        pan:
+          $ref: '#/components/schemas/_PanStep'
+        id:
+          $ref: '#/components/schemas/_IdStep'
+        bank:
+          $ref: '#/components/schemas/_BankStep'
+      required:
+      - bank
+      - id
+      - pan
   securitySchemes:
     bearerAuth:
       type: http

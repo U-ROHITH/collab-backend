@@ -70,8 +70,11 @@ def test_campaign_matrix(world: dict[str, Any], anon: Any) -> None:
     assert world["other_brand"].get(f"/v1/campaigns/{cid}/").status_code == 404
     assert world["other_brand"].patch(f"/v1/campaigns/{cid}/", {"title": "hacked"}, format="json").status_code == 404
     assert world["creator"].patch(f"/v1/campaigns/{cid}/", {"title": "hacked"}, format="json").status_code == 404
-    # unapproved creators can neither see nor bid
-    assert world["pending"].get("/v1/campaigns/").json()["data"] == []
+    # unapproved creators get the guest list (no brief / usage rights) and can't bid
+    guest_view = world["pending"].get("/v1/campaigns/").json()["data"]
+    assert [c["id"] for c in guest_view] == [cid]
+    assert guest_view[0]["brief"] is None and guest_view[0]["usageRights"] is None
+    assert world["pending"].get(f"/v1/campaigns/{cid}/").status_code == 404
     r = world["pending"].post(
         f"/v1/campaigns/{cid}/bids/", {"price": 100_00, "message": "x", "deliveryDays": 1}, format="json"
     )

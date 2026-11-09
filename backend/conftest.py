@@ -24,6 +24,12 @@ def anon() -> APIClient:
     return APIClient()
 
 
+def _verify_kyc(user: User) -> None:
+    from apps.kyc.models import KycProfile, KycStatus
+
+    KycProfile.objects.update_or_create(user=user, defaults={"status": KycStatus.VERIFIED})
+
+
 def _client_for(user: User) -> APIClient:
     client = APIClient()
     client.credentials(HTTP_AUTHORIZATION=f"Bearer {issue_tokens(user).access}")
@@ -35,10 +41,12 @@ def _client_for(user: User) -> APIClient:
 def make_brand(db: Any) -> Callable[..., APIClient]:
     counter = iter(range(1000))
 
-    def _make(name: str = "Nimbu Foods") -> APIClient:
+    def _make(name: str = "Nimbu Foods", kyc: bool = True) -> APIClient:
         n = next(counter)
         user = User.objects.create_user(email=f"brand{n}-{name.replace(' ', '').lower()}@example.com")
         complete_signup(user=user, role="brand", full_name="Brand Owner", brand_name=name)
+        if kyc:
+            _verify_kyc(user)
         return _client_for(User.objects.get(pk=user.pk))
 
     return _make
@@ -48,7 +56,7 @@ def make_brand(db: Any) -> Callable[..., APIClient]:
 def make_creator(db: Any) -> Callable[..., APIClient]:
     counter = iter(range(1000))
 
-    def _make(name: str = "Ananya Rao", approved: bool = True) -> APIClient:
+    def _make(name: str = "Ananya Rao", approved: bool = True, kyc: bool = True) -> APIClient:
         n = next(counter)
         user = User.objects.create_user(phone=f"+9198765{n:05d}")
         complete_signup(user=user, role="creator", full_name=name, display_name=name)
@@ -56,6 +64,8 @@ def make_creator(db: Any) -> Callable[..., APIClient]:
         if approved:
             user.creator.approval_status = ApprovalStatus.APPROVED
             user.creator.save()
+        if kyc:
+            _verify_kyc(user)
         return _client_for(user)
 
     return _make

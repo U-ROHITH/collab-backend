@@ -28,10 +28,17 @@ class MeOutput(serializers.ModelSerializer):
     fullName = serializers.CharField(source="full_name")  # noqa: N815
     needsOnboarding = serializers.SerializerMethodField()  # noqa: N815
     profileId = serializers.SerializerMethodField()  # noqa: N815
+    kycStatus = serializers.SerializerMethodField()  # noqa: N815
 
     class Meta:
         model = User
-        fields = ("id", "email", "phone", "fullName", "role", "status", "needsOnboarding", "profileId")
+        fields = ("id", "email", "phone", "fullName", "role", "status", "needsOnboarding", "profileId", "kycStatus")
+
+    def get_kycStatus(self, obj: User) -> str:  # noqa: N802
+        """not_started | in_progress | pending | verified | rejected"""
+        from apps.kyc.services import status_of
+
+        return status_of(obj)
 
     def get_needsOnboarding(self, obj: User) -> bool:  # noqa: N802
         return obj.role is None
@@ -56,3 +63,13 @@ class SignupCompleteInput(StrictSerializer):
 
 class RefreshInput(StrictSerializer):
     refresh = serializers.CharField()
+
+
+class GoogleSignInInput(StrictSerializer):
+    idToken = serializers.CharField(max_length=4096)  # noqa: N815
+    role = serializers.ChoiceField(
+        choices=[Role.BRAND, Role.CREATOR],
+        required=False,
+        allow_null=True,
+        help_text="Used only when the account has no role yet (first sign-in).",
+    )
