@@ -3,6 +3,7 @@ from uuid import UUID
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.generics import ListAPIView
+from rest_framework.permissions import AllowAny
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -54,9 +55,9 @@ class CampaignCursorPagination(EnvelopeCursorPagination):
 
 
 class CampaignListCreateView(ListAPIView):
-    """GET: brand -> its campaigns; approved creator -> open campaigns. POST: brand creates."""
+    """GET: public/anon -> open campaigns; brand -> its campaigns. POST: brand creates."""
 
-    permission_classes = [IsBrandOrCreator]
+    permission_classes = [AllowAny]
     serializer_class = CampaignOutput
     pagination_class = CampaignCursorPagination
     throttle_scope = "writes"
@@ -79,7 +80,7 @@ class CampaignListCreateView(ListAPIView):
 
     @extend_schema(request=CampaignInput, responses={201: CampaignOutput})
     def post(self, request: Request) -> Response:
-        if not IsBrand().has_permission(request, self):
+        if not getattr(request.user, "is_authenticated", False) or not IsBrand().has_permission(request, self):
             raise NotFound()
         data = CampaignInput(data=request.data)
         data.is_valid(raise_exception=True)

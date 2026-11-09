@@ -83,6 +83,24 @@ paths:
               schema:
                 $ref: '#/components/schemas/MeOutput'
           description: ''
+    patch:
+      operationId: auth_me_partial_update
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedMeUpdateInputRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeOutput'
+          description: ''
   /v1/auth/otp/request/:
     post:
       operationId: auth_otp_request_create
@@ -216,8 +234,8 @@ paths:
   /v1/campaigns/:
     get:
       operationId: campaigns_list
-      description: 'GET: brand -> its campaigns; approved creator -> open campaigns.
-        POST: brand creates.'
+      description: 'GET: public/anon -> open campaigns; brand -> its campaigns. POST:
+        brand creates.'
       parameters:
       - in: query
         name: budgetMax
@@ -296,12 +314,14 @@ paths:
           enum:
           - instagram
           - youtube
+          - tiktok
           - other
           type: string
           minLength: 1
         description: |-
           * `instagram` - Instagram
           * `youtube` - YouTube
+          * `tiktok` - TikTok
           * `other` - Other
       - in: query
         name: q
@@ -337,6 +357,7 @@ paths:
       - campaigns
       security:
       - bearerAuth: []
+      - {}
       responses:
         '200':
           content:
@@ -346,8 +367,8 @@ paths:
           description: ''
     post:
       operationId: campaigns_create
-      description: 'GET: brand -> its campaigns; approved creator -> open campaigns.
-        POST: brand creates.'
+      description: 'GET: public/anon -> open campaigns; brand -> its campaigns. POST:
+        brand creates.'
       tags:
       - campaigns
       requestBody:
@@ -358,6 +379,7 @@ paths:
         required: true
       security:
       - bearerAuth: []
+      - {}
       responses:
         '201':
           content:
@@ -759,8 +781,7 @@ paths:
   /v1/creators/:
     get:
       operationId: creators_list
-      description: 'Discovery: approved creators only. Visible to signed-up brands
-        and creators.'
+      description: 'Discovery: approved creators only. Visible publicly and anonymously.'
       parameters:
       - in: query
         name: category
@@ -807,12 +828,14 @@ paths:
           enum:
           - instagram
           - youtube
+          - tiktok
           - other
           type: string
           minLength: 1
         description: |-
           * `instagram` - Instagram
           * `youtube` - YouTube
+          * `tiktok` - TikTok
           * `other` - Other
       - in: query
         name: q
@@ -828,6 +851,7 @@ paths:
       - creators
       security:
       - bearerAuth: []
+      - {}
       responses:
         '200':
           content:
@@ -849,6 +873,7 @@ paths:
       - creators
       security:
       - bearerAuth: []
+      - {}
       responses:
         '200':
           content:
@@ -882,6 +907,7 @@ paths:
       - creators
       security:
       - bearerAuth: []
+      - {}
       responses:
         '200':
           content:
@@ -1000,8 +1026,8 @@ paths:
   /v1/creators/me/campaigns/:
     get:
       operationId: creators_me_campaigns_list
-      description: 'GET: brand -> its campaigns; approved creator -> open campaigns.
-        POST: brand creates.'
+      description: 'GET: public/anon -> open campaigns; brand -> its campaigns. POST:
+        brand creates.'
       parameters:
       - in: query
         name: budgetMax
@@ -1080,12 +1106,14 @@ paths:
           enum:
           - instagram
           - youtube
+          - tiktok
           - other
           type: string
           minLength: 1
         description: |-
           * `instagram` - Instagram
           * `youtube` - YouTube
+          * `tiktok` - TikTok
           * `other` - Other
       - in: query
         name: q
@@ -1121,6 +1149,7 @@ paths:
       - creators
       security:
       - bearerAuth: []
+      - {}
       responses:
         '200':
           content:
@@ -1130,8 +1159,8 @@ paths:
           description: ''
     post:
       operationId: creators_me_campaigns_create
-      description: 'GET: brand -> its campaigns; approved creator -> open campaigns.
-        POST: brand creates.'
+      description: 'GET: public/anon -> open campaigns; brand -> its campaigns. POST:
+        brand creates.'
       tags:
       - creators
       requestBody:
@@ -1142,6 +1171,7 @@ paths:
         required: true
       security:
       - bearerAuth: []
+      - {}
       responses:
         '201':
           content:
@@ -1989,6 +2019,76 @@ paths:
               schema:
                 $ref: '#/components/schemas/CreatorWalletOutput'
           description: ''
+  /v1/reports/analytics/:
+    get:
+      operationId: reports_analytics_retrieve
+      tags:
+      - reports
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportsOverviewOutput'
+          description: ''
+  /v1/reports/export/campaigns/:
+    get:
+      operationId: reports_export_campaigns_retrieve
+      tags:
+      - reports
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: string
+          description: ''
+  /v1/reports/export/orders/:
+    get:
+      operationId: reports_export_orders_retrieve
+      tags:
+      - reports
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: string
+          description: ''
+  /v1/reports/export/transactions/:
+    get:
+      operationId: reports_export_transactions_retrieve
+      tags:
+      - reports
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: string
+          description: ''
+  /v1/reports/overview/:
+    get:
+      operationId: reports_overview_retrieve
+      tags:
+      - reports
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportsOverviewOutput'
+          description: ''
   /v1/uploads/:
     post:
       operationId: uploads_create
@@ -2564,6 +2664,12 @@ components:
           readOnly: true
         socialMediaUrls:
           readOnly: true
+        socialAccounts:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+          readOnly: true
         rating:
           type: number
           format: double
@@ -2585,6 +2691,7 @@ components:
       - repliesWithin
       - reviewCount
       - slug
+      - socialAccounts
       - socialMediaUrls
       - startingPrice
     CreatorDetailOutput:
@@ -2632,6 +2739,12 @@ components:
           readOnly: true
         socialMediaUrls:
           readOnly: true
+        socialAccounts:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+          readOnly: true
         rating:
           type: number
           format: double
@@ -2660,6 +2773,7 @@ components:
       - repliesWithin
       - reviewCount
       - slug
+      - socialAccounts
       - socialMediaUrls
       - startingPrice
     CreatorProfileInputRequest:
@@ -2687,6 +2801,24 @@ components:
         repliesWithin:
           $ref: '#/components/schemas/RepliesWithinEnum'
         socialMediaUrls: {}
+        socialAccounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/SocialAccountInputRequest'
+        age:
+          type: integer
+          maximum: 120
+          minimum: 13
+          nullable: true
+        gender:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/GenderEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        genderDescription:
+          type: string
+          nullable: true
+          maxLength: 120
         profilePicture:
           type: string
           format: binary
@@ -2746,6 +2878,12 @@ components:
           readOnly: true
         socialMediaUrls:
           readOnly: true
+        socialAccounts:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+          readOnly: true
         rating:
           type: number
           format: double
@@ -2763,11 +2901,23 @@ components:
           items:
             $ref: '#/components/schemas/PackageOutput'
           readOnly: true
+        age:
+          type: integer
+          nullable: true
+        gender:
+          type: string
+          nullable: true
+        genderDescription:
+          type: string
+          nullable: true
       required:
+      - age
       - approvalStatus
       - avatarUrl
       - displayName
       - followerCount
+      - gender
+      - genderDescription
       - id
       - packages
       - primaryPlatform
@@ -2776,6 +2926,7 @@ components:
       - repliesWithin
       - reviewCount
       - slug
+      - socialAccounts
       - socialMediaUrls
       - startingPrice
     CreatorWalletOutput:
@@ -2885,10 +3036,14 @@ components:
         challengeId:
           type: string
           format: uuid
+        expiresAt:
+          type: string
+          format: date-time
         expiresIn:
           type: integer
       required:
       - challengeId
+      - expiresAt
     EmailVerificationVerifyInputRequest:
       type: object
       properties:
@@ -2922,6 +3077,20 @@ components:
           maxLength: 4000
       required:
       - feedback
+    GenderEnum:
+      enum:
+      - male
+      - female
+      - non_binary
+      - other
+      - prefer_not_to_say
+      type: string
+      description: |-
+        * `male` - Male
+        * `female` - Female
+        * `non_binary` - Non-binary
+        * `other` - Other
+        * `prefer_not_to_say` - Prefer not to say
     ListAddCreatorInputRequest:
       type: object
       properties:
@@ -3691,6 +3860,24 @@ components:
         repliesWithin:
           $ref: '#/components/schemas/RepliesWithinEnum'
         socialMediaUrls: {}
+        socialAccounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/SocialAccountInputRequest'
+        age:
+          type: integer
+          maximum: 120
+          minimum: 13
+          nullable: true
+        gender:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/GenderEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        genderDescription:
+          type: string
+          nullable: true
+          maxLength: 120
         profilePicture:
           type: string
           format: binary
@@ -3712,6 +3899,17 @@ components:
           type: string
           minLength: 1
           maxLength: 80
+    PatchedMeUpdateInputRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+        fullName:
+          type: string
+          minLength: 1
+          maxLength: 120
     PatchedOfferResponseInputRequest:
       type: object
       properties:
@@ -3827,11 +4025,13 @@ components:
       enum:
       - instagram
       - youtube
+      - tiktok
       - other
       type: string
       description: |-
         * `instagram` - Instagram
         * `youtube` - YouTube
+        * `tiktok` - TikTok
         * `other` - Other
     ReadAll:
       type: object
@@ -3869,6 +4069,17 @@ components:
         * `6h` - 6 hours
         * `24h` - 24 hours
         * `3d` - 3 days
+    ReportsOverviewOutput:
+      type: object
+      properties:
+        role:
+          type: string
+        metrics:
+          type: object
+          additionalProperties: {}
+      required:
+      - metrics
+      - role
     ReviewInputRequest:
       type: object
       properties:
@@ -3932,6 +4143,20 @@ components:
       description: |-
         * `brand` - brand
         * `creator` - creator
+    SocialAccountInputRequest:
+      type: object
+      properties:
+        platform:
+          type: string
+          minLength: 1
+          maxLength: 40
+        handle:
+          type: string
+          minLength: 1
+          maxLength: 120
+      required:
+      - handle
+      - platform
     TokenRefresh:
       type: object
       properties:

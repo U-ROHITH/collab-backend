@@ -13,7 +13,7 @@ from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, Ou
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
-from apps.core.exceptions import DomainError
+from apps.core.exceptions import Conflict, DomainError
 from apps.identity import services
 from apps.identity.models import User
 from apps.identity.serializers import (
@@ -23,6 +23,7 @@ from apps.identity.serializers import (
     EmailVerificationVerifyInput,
     EmailVerificationVerifyOutput,
     MeOutput,
+    MeUpdateInput,
     OtpRequestInput,
     OtpRequestOutput,
     OtpVerifyInput,
@@ -106,7 +107,11 @@ class EmailVerificationRequestView(APIView):
             ip=_client_ip(request),
         )
         return Response(
-            {"challengeId": challenge.id, "expiresIn": settings.OTP_TTL_SECONDS},
+            {
+                "challengeId": challenge.id,
+                "expiresAt": challenge.expires_at.isoformat(),
+                "expiresIn": settings.OTP_TTL_SECONDS,
+            },
             status=status.HTTP_200_OK,
         )
 
@@ -162,6 +167,27 @@ class MeView(APIView):
     @extend_schema(responses=MeOutput)
     def get(self, request: Request) -> Response:
         return Response(MeOutput(request.user).data)
+
+    @extend_schema(request=MeUpdateInput, responses=MeOutput)
+    def patch(self, request: Request) -> Response:
+        data = MeUpdateInput(data=request.data, partial=True)
+        data.is_valid(raise_exception=True)
+        v = data.validated_data
+        user = request.user
+        update_fields: list[str] = []
+        if "email" in v and v["email"] != user.email:
+            new_email = v["email"].lower()
+            if User.objects.filter(email=new_email).exclude(pk=user.pk).exists():
+                raise Conflict("This email is already in use by another account.", code="EMAIL_ALREADY_IN_USE")
+            user.email = new_email
+            update_fields.append("email")
+        if "fullName" in v:
+            user.full_name = v["fullName"]
+            update_fields.append("full_name")
+        if update_fields:
+            update_fields.append("updated_at")
+            user.save(update_fields=update_fields)
+        return Response(MeOutput(user).data)
 
 
 class SignupCompleteView(APIView):

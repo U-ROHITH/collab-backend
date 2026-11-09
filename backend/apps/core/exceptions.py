@@ -96,6 +96,15 @@ def envelope_exception_handler(exc: Exception, context: dict[str, Any]) -> Respo
         return Response(_envelope("INTERNAL_ERROR", "Something went wrong.", request_id), status=500)
 
     code = next((c for t, c in _DRF_CODES.items() if isinstance(exc, t)), "ERROR")
+    if isinstance(exc, (drf_exc.AuthenticationFailed, drf_exc.NotAuthenticated)):
+        exc_str = str(getattr(exc, "detail", exc)).lower()
+        if "expired" in exc_str or "token_not_valid" in exc_str:
+            code = "TOKEN_EXPIRED"
+
+    view = context.get("view")
+    if view and getattr(view, "__class__", None).__name__ == "TokenRefreshEnvelopeView" and response.status_code == 401:
+        code = "TOKEN_EXPIRED"
+
     if isinstance(exc, drf_exc.ValidationError):
         response.data = _envelope(code, "Invalid input.", request_id, details=exc.detail)
     else:

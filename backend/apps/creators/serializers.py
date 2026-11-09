@@ -6,7 +6,7 @@ from PIL import Image, UnidentifiedImageError
 from rest_framework import serializers
 
 from apps.core.serializers import MoneyField, StrictSerializer
-from apps.creators.models import Creator, CreatorPackage, Platform, RepliesWithin
+from apps.creators.models import Creator, CreatorPackage, Gender, Platform, RepliesWithin
 
 MAX_PROFILE_PICTURE_SIZE_BYTES = 5 * 1024 * 1024  # 5MB
 
@@ -47,6 +47,7 @@ class CreatorCardOutput(serializers.ModelSerializer):
     avatarUrl = serializers.SerializerMethodField()  # noqa: N815
     profilePicture = serializers.SerializerMethodField()  # noqa: N815
     socialMediaUrls = serializers.JSONField(source="social_media_links", read_only=True)  # noqa: N815
+    socialAccounts = serializers.SerializerMethodField()  # noqa: N815
     rating = serializers.FloatField()
     reviewCount = serializers.IntegerField(source="rating_count")  # noqa: N815
     startingPrice = serializers.SerializerMethodField()  # noqa: N815
@@ -67,10 +68,18 @@ class CreatorCardOutput(serializers.ModelSerializer):
             "avatarUrl",
             "profilePicture",
             "socialMediaUrls",
+            "socialAccounts",
             "rating",
             "reviewCount",
             "startingPrice",
         )
+
+    def get_socialAccounts(self, obj: Creator) -> list[dict[str, Any]]:  # noqa: N802
+        if obj.social_accounts:
+            return obj.social_accounts
+        if obj.social_media_links and isinstance(obj.social_media_links, dict):
+            return [{"platform": k, "handle": v} for k, v in obj.social_media_links.items() if isinstance(v, str)]
+        return []
 
     def get_avatarUrl(self, obj: Creator) -> str | None:  # noqa: N802
         url = obj.avatar_url
@@ -112,9 +121,12 @@ class CreatorDetailOutput(CreatorCardOutput):
 class CreatorSelfOutput(CreatorCardOutput):
     approvalStatus = serializers.CharField(source="approval_status")  # noqa: N815
     packages = PackageOutput(many=True, read_only=True)
+    age = serializers.IntegerField(allow_null=True)
+    gender = serializers.CharField(allow_null=True)
+    genderDescription = serializers.CharField(source="gender_description", allow_null=True)  # noqa: N815
 
     class Meta(CreatorCardOutput.Meta):
-        fields = (*CreatorCardOutput.Meta.fields, "approvalStatus", "packages")
+        fields = (*CreatorCardOutput.Meta.fields, "approvalStatus", "packages", "age", "gender", "genderDescription")
 
 
 class ProfilePictureField(serializers.ImageField):
@@ -171,6 +183,34 @@ class UploadOutput(serializers.Serializer):
     contentType = serializers.CharField(required=False)  # noqa: N815
 
 
+SUPPORTED_PLATFORMS = {
+    "instagram",
+    "youtube",
+    "tiktok",
+    "twitter",
+    "x",
+    "facebook",
+    "linkedin",
+    "threads",
+    "twitch",
+    "pinterest",
+    "other",
+}
+
+
+class SocialAccountInput(StrictSerializer):
+    platform = serializers.CharField(max_length=40)
+    handle = serializers.CharField(max_length=120)
+
+    def validate_platform(self, value: str) -> str:
+        plat = value.lower().strip()
+        if plat not in SUPPORTED_PLATFORMS:
+            raise serializers.ValidationError(
+                f"Unsupported platform '{value}'. Supported platforms: {', '.join(sorted(SUPPORTED_PLATFORMS))}."
+            )
+        return plat
+
+
 class CreatorProfileInput(StrictSerializer):
     displayName = serializers.CharField(max_length=80, required=False)  # noqa: N815
     bio = serializers.CharField(max_length=2000, required=False, allow_blank=True)
@@ -179,6 +219,10 @@ class CreatorProfileInput(StrictSerializer):
     primaryPlatform = serializers.ChoiceField(choices=Platform.choices, required=False)  # noqa: N815
     repliesWithin = serializers.ChoiceField(choices=RepliesWithin.choices, required=False)  # noqa: N815
     socialMediaUrls = serializers.JSONField(required=False)  # noqa: N815
+    socialAccounts = serializers.ListField(child=SocialAccountInput(), required=False)  # noqa: N815
+    age = serializers.IntegerField(min_value=13, max_value=120, required=False, allow_null=True)
+    gender = serializers.ChoiceField(choices=Gender.choices, required=False, allow_null=True)
+    genderDescription = serializers.CharField(max_length=120, required=False, allow_blank=True, allow_null=True)  # noqa: N815
     profilePicture = ProfilePictureField(required=False, allow_null=True)  # noqa: N815
     avatar = ProfilePictureField(required=False, allow_null=True)
     avatarUrl = serializers.URLField(required=False, allow_blank=True)  # noqa: N815
@@ -225,6 +269,25 @@ class CreatorProfileInput(StrictSerializer):
                         data["socialMediaUrls"] = data[alias]
                     del data[alias]
 
+            # Normalize social accounts aliases
+            if "social_accounts" in data:
+                if "socialAccounts" not in data:
+                    data["socialAccounts"] = data["social_accounts"]
+                del data["social_accounts"]
+
+            if "socialAccounts" in data and isinstance(data["socialAccounts"], str):
+                try:
+                    parsed = json.loads(data["socialAccounts"])
+                    if isinstance(parsed, list):
+                        data["socialAccounts"] = parsed
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            if "gender_description" in data:
+                if "genderDescription" not in data:
+                    data["genderDescription"] = data["gender_description"]
+                del data["gender_description"]
+
             if "categories" in data and isinstance(data["categories"], str):
                 try:
                     parsed = json.loads(data["categories"])
@@ -237,6 +300,16 @@ class CreatorProfileInput(StrictSerializer):
                         data["categories"] = [data["categories"].strip()]
 
         return super().to_internal_value(data)
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        social_accounts = attrs.get("socialAccounts")
+        primary_platform = attrs.get("primaryPlatform")
+        if social_accounts is not None and primary_platform:
+            platforms = [item["platform"].lower() for item in social_accounts]
+            if primary_platform.lower() not in platforms:
+                msg = f"primaryPlatform '{primary_platform}' must match one of the socialAccounts platforms."
+                raise serializers.ValidationError({"primaryPlatform": msg})
+        return attrs
 
     def validate_profilePicture(self, value: Any) -> Any:  # noqa: N802
         if value and hasattr(value, "size") and value.size > MAX_PROFILE_PICTURE_SIZE_BYTES:

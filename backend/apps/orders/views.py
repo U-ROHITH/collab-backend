@@ -4,7 +4,7 @@ from django.conf import settings
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.generics import ListAPIView
-from rest_framework.permissions import BasePermission
+from rest_framework.permissions import AllowAny, BasePermission
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -149,7 +149,7 @@ class ReviewCreateView(APIView):
 
 
 class CreatorReviewsView(ListAPIView):
-    permission_classes = [IsBrandOrCreator]
+    permission_classes = [AllowAny]
     serializer_class = ReviewOutput
 
     def get_queryset(self):  # type: ignore[no-untyped-def]

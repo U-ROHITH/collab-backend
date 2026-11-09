@@ -42,12 +42,18 @@ class MeOutput(serializers.ModelSerializer):
         return str(profile.id) if profile else None
 
 
+class MeUpdateInput(StrictSerializer):
+    email = serializers.EmailField(required=False)
+    fullName = serializers.CharField(max_length=120, required=False)  # noqa: N815
+
+
 class EmailVerificationRequestInput(StrictSerializer):
     email = serializers.EmailField()
 
 
 class EmailVerificationRequestOutput(serializers.Serializer):
     challengeId = serializers.UUIDField()  # noqa: N815
+    expiresAt = serializers.DateTimeField()  # noqa: N815
     expiresIn = serializers.IntegerField(required=False)  # noqa: N815
 
 

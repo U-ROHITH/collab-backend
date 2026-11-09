@@ -65,6 +65,24 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
             models.CheckConstraint(condition=Q(status__in=UserStatus.values), name="user_status_valid"),
         ]
 
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)
+        self._original_email = self.email
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        if self.pk:
+            update_fields = kwargs.get("update_fields")
+            email_changed = hasattr(self, "_original_email") and self.email != self._original_email
+            if email_changed:
+                if update_fields is not None:
+                    if "email_verified" not in update_fields:
+                        self.email_verified = False
+                        kwargs["update_fields"] = list(update_fields) + ["email_verified"]
+                else:
+                    self.email_verified = False
+        super().save(*args, **kwargs)
+        self._original_email = self.email
+
     @property
     def is_active(self) -> bool:  # type: ignore[override]
         # Checked on every authenticated request: suspended/deactivated users are locked out immediately.

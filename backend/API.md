@@ -4,7 +4,7 @@ Interactive docs: run the server and open **`/v1/docs/`** (Swagger, dev only). R
 React apps should generate types from the schema: `npx openapi-typescript http://localhost:8000/v1/schema/ -o src/api/schema.ts`.
 
 ## Conventions
-- Auth header: `Authorization: Bearer <access>` (15-minute access token; refresh with `/v1/auth/token/refresh/`).
+- Auth header: `Authorization: Bearer <access>` (15-minute access token; refresh with `/v1/auth/token/refresh/` using 15-day rotating refresh tokens. Expired tokens return `TOKEN_EXPIRED` with HTTP 401).
 - Every response: `{ "success", "data", "error", "meta" }`. Errors: `error.code` (stable, switch on it), `error.message`, `error.requestId`, plus `error.details` (field errors) on validation failures.
 - Money: integer **paise**, e.g. `{ "amount": 1118000, "currency": "INR" }`. Request fields like `price`/`budget` are paise too.
 - Lists: cursor pagination with `?limit=` (max 50) and `?cursor=` from `meta.nextCursor`.
@@ -16,12 +16,13 @@ React apps should generate types from the schema: `npx openapi-typescript http:/
 |---|---|---|---|
 | POST | `/v1/auth/otp/request/` | anyone | `{channel: "sms"\|"email", destination}` → `{challengeId, expiresIn}`. 5/min per IP, 5/hour per destination |
 | POST | `/v1/auth/otp/verify/` | anyone | `{challengeId, code}` → `{access, refresh, user}`. 5 attempts per code; single use |
-| POST | `/v1/auth/email/request/` | user | `{email}` → `{challengeId, expiresIn}`. Dispatches verification code to email |
+| POST | `/v1/auth/email/request/` | user | `{email}` → `{challengeId, expiresAt, expiresIn}`. Dispatches verification code to email |
 | POST | `/v1/auth/email/verify/` | user | `{challengeId, code}` → `{email, emailVerified: true}`. Binds verified email to user |
-| POST | `/v1/auth/token/refresh/` | anyone | `{refresh}` → `{access, refresh, user}` (rotates; old token blacklisted) |
+| POST | `/v1/auth/token/refresh/` | anyone | `{refresh}` → `{access, refresh, user}` (15-day expiry with rotation; old token blacklisted; returns `TOKEN_EXPIRED` (401) on failure) |
 | POST | `/v1/auth/logout/` | user | `{refresh}` → 204 |
 | POST | `/v1/auth/logout-all/` | user | revokes every refresh token |
-| GET | `/v1/auth/me/` | user | includes `email`, `emailVerified`, `needsOnboarding`, `profileId` |
+| GET | `/v1/auth/me/` | user | includes `email`, `emailVerified`, `role`, `needsOnboarding`, `profileId` |
+| PATCH | `/v1/auth/me/` | user | `{email?, fullName?}`. Changing email automatically resets `emailVerified` to `false` |
 | POST | `/v1/auth/signup/complete/` | user | `{role: "brand"\|"creator", fullName, brandName?, displayName?}`, once only. `admin` is impossible here |
 
 ## Creators & Media Uploads
@@ -29,7 +30,7 @@ React apps should generate types from the schema: `npx openapi-typescript http:/
 ### Profile & Avatar
 | Method | Path | Who | Notes |
 |---|---|---|---|
-| GET/PATCH | `/v1/creators/me/` | creator | Returns `CreatorSelfOutput` including **all own packages**. Accepts `displayName` / `name`, `bio`, `categories[]`, `location`, `primaryPlatform`, `repliesWithin`, `profilePicture` [multipart, max 5MB], `socialMediaUrls` |
+| GET/PATCH | `/v1/creators/me/` | creator | Returns `CreatorSelfOutput` including **all own packages**, `socialAccounts`, and private fields `age`, `gender`, `genderDescription`. Accepts `displayName` / `name`, `bio`, `categories[]`, `location`, `primaryPlatform`, `repliesWithin`, `socialAccounts` (`[{"platform", "handle"}]`), `age`, `gender`, `genderDescription`, `profilePicture` [multipart, max 5MB], `avatarUrl`, `socialMediaUrls` |
 | POST | `/v1/uploads/` | authenticated | Multipart file upload (`file`, optional `kind: "avatar"`). 5MB limit, image-only. Auto-binds avatar to creator's profile |
 | POST | `/v1/creators/me/avatar/` | creator | Dedicated multipart avatar upload (`avatar` or `file`). Alias of `/v1/uploads/` |
 
@@ -60,9 +61,9 @@ Creators expose **service tiers** (packages) on their public profile. Each packa
 ### Discovery & Public Profile
 | Method | Path | Who | Notes |
 |---|---|---|---|
-| GET | `/v1/creators/?q=&category=&location=&platform=&verified=&minPrice=&maxPrice=&minFollowers=` | brand/creator | Lists approved creators only. `startingPrice` reflects cheapest active package |
-| GET | `/v1/creators/{id}/` | brand/creator | Full profile (`CreatorDetailOutput`) — includes **only active packages** sorted by price ascending. `startingPrice` = cheapest active package |
-| GET | `/v1/creators/{id}/reviews/` | brand/creator | Paginated review list |
+| GET | `/v1/creators/?q=&category=&location=&platform=&verified=&minPrice=&maxPrice=&minFollowers=` | anyone (`AllowAny`) | Lists approved creators only. Anonymous browsing allowed. `startingPrice` reflects cheapest active package |
+| GET | `/v1/creators/{id}/` | anyone (`AllowAny`) | Full profile (`CreatorDetailOutput`) — includes **only active packages** sorted by price ascending. `startingPrice` = cheapest active package. Excludes private fields (`age`, `gender`, `genderDescription`) |
+| GET | `/v1/creators/{id}/reviews/` | anyone (`AllowAny`) | Paginated review list |
 
 ## Brands, lists, cart
 | Method | Path | Who |
@@ -79,7 +80,7 @@ Creators expose **service tiers** (packages) on their public profile. Each packa
 ## Campaigns & bids
 | Method | Path | Who | Notes |
 |---|---|---|---|
-| GET | `/v1/campaigns/?status=&platform=&category=&industry=&city=&territory=&budgetMin__gte=&budgetMax__lte=&search=&sort=&limit=&cursor=` (alias `/v1/creators/me/campaigns/`) | brand / approved creator | Query, filter, and search campaigns with cursor pagination & sorting (`closesAt`, `-closesAt`, `budgetMax`, `-budgetMax`) |
+| GET | `/v1/campaigns/?status=&platform=&category=&industry=&city=&territory=&budgetMin__gte=&budgetMax__lte=&search=&sort=&limit=&cursor=` (alias `/v1/creators/me/campaigns/`) | anyone (`AllowAny`) / brand / approved creator | Query, filter, and search open campaigns anonymously with cursor pagination & sorting (`closesAt`, `-closesAt`, `budgetMax`, `-budgetMax`). Brand sees its own campaigns |
 | POST | `/v1/campaigns/` | brand | `title, brief, platform, deliverables, budgetMin, budgetMax, closesAt, status?, usageRights` |
 | GET/PATCH | `/v1/campaigns/{id}/` | brand owner / approved creator | GET if open; PATCH for brand owner |
 | POST | `/v1/campaigns/{id}/close/` | brand owner | pending bids → rejected |
@@ -133,6 +134,14 @@ Enforces the **Brand-First Messaging Rule**: A brand cannot initiate or send mes
 | POST | `/v1/conversations/` | brand / creator | Initiate or retrieve a conversation (`creatorId` / `brandId`, optional `content`). Strictly enforces brand-first rule |
 | GET | `/v1/conversations/{id}/messages/` | participants | Retrieves messages in chronological order and marks unread messages from the other party as read |
 | POST | `/v1/conversations/{id}/messages/` | participants | Sends a message within a conversation (`content`). Enforces brand-first rule |
+
+## Reporting, Analytics & CSV Exports
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| GET | `/v1/reports/overview/` (alias `/v1/reports/analytics/`) | authenticated user | Role-based metrics dashboard (brand: total spend, campaigns, orders; creator: total earnings, pending earnings, active/completed orders, rating) |
+| GET | `/v1/reports/export/orders/` | authenticated user | Downloads `orders.csv` with order details, statuses, paise & INR amounts |
+| GET | `/v1/reports/export/campaigns/` | authenticated user | Downloads `campaigns.csv` with campaigns, platform, deliverables, budget range |
+| GET | `/v1/reports/export/transactions/` | authenticated creator | Downloads `transactions.csv` with wallet transactions, types, and amounts |
 
 ## Notifications
 | Method | Path |

@@ -7,7 +7,7 @@ from drf_spectacular.utils import extend_schema
 from rest_framework import serializers, status
 from rest_framework.generics import ListAPIView
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -26,7 +26,7 @@ from apps.creators.serializers import (
     UploadInput,
     UploadOutput,
 )
-from apps.identity.permissions import IsBrandOrCreator, IsCreator
+from apps.identity.permissions import IsCreator
 
 
 def _my_creator(request: Request) -> Creator:
@@ -136,9 +136,9 @@ class MyPackageDetailView(APIView):
 
 
 class CreatorSearchView(ListAPIView):
-    """Discovery: approved creators only. Visible to signed-up brands and creators."""
+    """Discovery: approved creators only. Visible publicly and anonymously."""
 
-    permission_classes = [IsBrandOrCreator]
+    permission_classes = [AllowAny]
     serializer_class = CreatorCardOutput
 
     @extend_schema(parameters=[CreatorSearchParams])
@@ -152,7 +152,7 @@ class CreatorSearchView(ListAPIView):
 
 
 class CreatorDetailView(APIView):
-    permission_classes = [IsBrandOrCreator]
+    permission_classes = [AllowAny]
 
     @extend_schema(responses=CreatorDetailOutput)
     def get(self, request: Request, creator_id: UUID) -> Response:

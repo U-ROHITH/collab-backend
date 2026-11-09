@@ -15,6 +15,7 @@ v1 = [
     path("", include("apps.notifications.urls")),
     path("", include("apps.conversations.urls")),
     path("", include("apps.money.urls")),
+    path("reports/", include("apps.reports.urls")),
 ]
 
 urlpatterns = [

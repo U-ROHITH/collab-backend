@@ -31,13 +31,13 @@ _BID_FIELDS = {
 }
 
 
-def campaigns_visible_to(user: User, status: str | None = None) -> QuerySet[Campaign]:
-    if user.role == Role.BRAND:
+def campaigns_visible_to(user: Any, status: str | None = None) -> QuerySet[Campaign]:
+    if getattr(user, "is_authenticated", False) and getattr(user, "role", None) == Role.BRAND:
         qs = Campaign.objects.filter(brand__owner=user)
         if status:
             qs = qs.filter(status=status)
         return qs
-    if user.role == Role.CREATOR:
+    if getattr(user, "is_authenticated", False) and getattr(user, "role", None) == Role.CREATOR:
         creator = getattr(user, "creator", None)
         if creator is None or not creator.is_approved:
             return Campaign.objects.none()
@@ -46,7 +46,12 @@ def campaigns_visible_to(user: User, status: str | None = None) -> QuerySet[Camp
         if status:
             return Campaign.objects.filter(status=status)
         return Campaign.objects.filter(status=CampaignStatus.OPEN, closes_at__gt=timezone.now())
-    return Campaign.objects.none()
+    # Anonymous or unauthenticated: public-safe browsing of open campaigns
+    if status == CampaignStatus.CLOSED:
+        return Campaign.objects.filter(Q(status=CampaignStatus.CLOSED) | Q(closes_at__lte=timezone.now()))
+    if status:
+        return Campaign.objects.filter(status=status)
+    return Campaign.objects.filter(status=CampaignStatus.OPEN, closes_at__gt=timezone.now())
 
 
 def filter_campaigns(qs: QuerySet[Campaign], params: dict[str, Any]) -> QuerySet[Campaign]:

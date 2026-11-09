@@ -9,7 +9,16 @@ from apps.core.models import BaseModel
 class Platform(models.TextChoices):
     INSTAGRAM = "instagram", "Instagram"
     YOUTUBE = "youtube", "YouTube"
+    TIKTOK = "tiktok", "TikTok"
     OTHER = "other", "Other"
+
+
+class Gender(models.TextChoices):
+    MALE = "male", "Male"
+    FEMALE = "female", "Female"
+    NON_BINARY = "non_binary", "Non-binary"
+    OTHER = "other", "Other"
+    PREFER_NOT_TO_SAY = "prefer_not_to_say", "Prefer not to say"
 
 
 class ApprovalStatus(models.TextChoices):
@@ -45,6 +54,10 @@ class Creator(BaseModel):
     avatar_url = models.URLField(max_length=500, blank=True)
     profile_picture = models.ImageField(upload_to="creators/profile_pictures/", null=True, blank=True)
     social_media_links = models.JSONField(default=dict, blank=True)
+    social_accounts = models.JSONField(default=list, blank=True)
+    age = models.PositiveSmallIntegerField(null=True, blank=True)
+    gender = models.CharField(max_length=20, choices=Gender.choices, null=True, blank=True)  # noqa: DJ001
+    gender_description = models.CharField(max_length=120, null=True, blank=True)  # noqa: DJ001
     rating_sum = models.PositiveIntegerField(default=0)
     rating_count = models.PositiveIntegerField(default=0)
 
@@ -55,6 +68,9 @@ class Creator(BaseModel):
                 condition=Q(approval_status__in=ApprovalStatus.values), name="creator_approval_valid"
             ),
             models.CheckConstraint(condition=Q(primary_platform__in=Platform.values), name="creator_platform_valid"),
+            models.CheckConstraint(
+                condition=Q(gender__isnull=True) | Q(gender__in=Gender.values), name="creator_gender_valid"
+            ),
         ]
         indexes = [models.Index(fields=["approval_status", "created_at"])]
 

@@ -28,6 +28,12 @@ _PROFILE_FIELDS = {
     "socialLinks": "social_media_links",
     "social_links": "social_media_links",
     "socialMediaLinks": "social_media_links",
+    "socialAccounts": "social_accounts",
+    "social_accounts": "social_accounts",
+    "age": "age",
+    "gender": "gender",
+    "genderDescription": "gender_description",
+    "gender_description": "gender_description",
 }
 _PACKAGE_FIELDS = {
     "title": "title",
