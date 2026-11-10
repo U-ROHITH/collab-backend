@@ -202,5 +202,6 @@ class SignupCompleteView(APIView):
             full_name=v["fullName"],
             brand_name=v.get("brandName", ""),
             display_name=v.get("displayName", ""),
+            password=v.get("password"),
         )
         return Response(MeOutput(user).data, status=status.HTTP_201_CREATED)

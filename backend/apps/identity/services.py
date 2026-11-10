@@ -176,7 +176,15 @@ def issue_tokens(user: User) -> AuthResult:
     return AuthResult(user=user, access=str(refresh.access_token), refresh=str(refresh))
 
 
-def complete_signup(*, user: User, role: str, full_name: str, brand_name: str = "", display_name: str = "") -> User:
+def complete_signup(
+    *,
+    user: User,
+    role: str,
+    full_name: str,
+    brand_name: str = "",
+    display_name: str = "",
+    password: str | None = None,
+) -> User:
     """Set role exactly once and create the matching profile. `admin` is never allowed here."""
     from apps.brands.services import create_brand_for_user
     from apps.creators.services import create_creator_for_user
@@ -189,7 +197,11 @@ def complete_signup(*, user: User, role: str, full_name: str, brand_name: str = 
             raise Conflict("Signup is already complete.", code="SIGNUP_ALREADY_COMPLETE")
         locked.role = role
         locked.full_name = full_name
-        locked.save(update_fields=["role", "full_name", "updated_at"])
+        update_fields = ["role", "full_name", "updated_at"]
+        if password:
+            locked.set_password(password)
+            update_fields.append("password")
+        locked.save(update_fields=update_fields)
         if role == Role.BRAND:
             create_brand_for_user(user=locked, name=brand_name or full_name)
         else:
@@ -199,7 +211,7 @@ def complete_signup(*, user: User, role: str, full_name: str, brand_name: str = 
             action="signup.completed",
             entity_type="user",
             entity_id=str(locked.pk),
-            metadata={"role": role},
+            metadata={"role": role, "password_set": bool(password)},
         )
     return locked
 

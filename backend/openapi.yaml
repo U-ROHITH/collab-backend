@@ -4138,6 +4138,16 @@ components:
         displayName:
           type: string
           maxLength: 80
+        password:
+          type: string
+          writeOnly: true
+          minLength: 1
+          maxLength: 128
+        confirmPassword:
+          type: string
+          writeOnly: true
+          minLength: 1
+          maxLength: 128
       required:
       - fullName
       - role

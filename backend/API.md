@@ -25,7 +25,7 @@ React apps should generate types from the schema: `npx openapi-typescript http:/
 | POST | `/v1/auth/logout-all/` | user | revokes every refresh token |
 | GET | `/v1/auth/me/` | user | includes `email`, `emailVerified`, `role`, `needsOnboarding`, `profileId` |
 | PATCH | `/v1/auth/me/` | user | `{email?, fullName?}`. Changing email automatically resets `emailVerified` to `false` |
-| POST | `/v1/auth/signup/complete/` | user | `{role: "brand"\|"creator", fullName, brandName?, displayName?}`, once only. `admin` is impossible here |
+| POST | `/v1/auth/signup/complete/` | user | `{role: "brand"\|"creator", fullName, brandName?, displayName?, password?, confirmPassword?}`, once only. Sets initial password if provided (min 8 chars). `admin` is impossible here |
 
 ## Creators & Media Uploads
 

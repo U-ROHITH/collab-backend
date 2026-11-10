@@ -1,3 +1,5 @@
+from typing import Any
+
 from rest_framework import serializers
 
 from apps.core.serializers import StrictSerializer
@@ -78,6 +80,33 @@ class SignupCompleteInput(StrictSerializer):
     fullName = serializers.CharField(max_length=120)  # noqa: N815
     brandName = serializers.CharField(max_length=120, required=False, allow_blank=True)  # noqa: N815
     displayName = serializers.CharField(max_length=80, required=False, allow_blank=True)  # noqa: N815
+    password = serializers.CharField(max_length=128, required=False, write_only=True)
+    confirmPassword = serializers.CharField(max_length=128, required=False, write_only=True)  # noqa: N815
+
+    def to_internal_value(self, data: Any) -> Any:
+        if isinstance(data, dict):
+            data = dict(data)
+            if "confirm_password" in data:
+                if "confirmPassword" not in data:
+                    data["confirmPassword"] = data["confirm_password"]
+                del data["confirm_password"]
+        return super().to_internal_value(data)
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        password = attrs.get("password")
+        confirm_password = attrs.get("confirmPassword")
+
+        if password or confirm_password:
+            if not password:
+                raise serializers.ValidationError({"password": "Password is required."})
+            if not confirm_password:
+                raise serializers.ValidationError({"confirmPassword": "Confirm password is required."})
+            if len(password) < 8:
+                raise serializers.ValidationError({"password": "Password must be at least 8 characters long."})
+            if password != confirm_password:
+                raise serializers.ValidationError({"confirmPassword": "Passwords do not match."})
+
+        return attrs
 
 
 class RefreshInput(StrictSerializer):

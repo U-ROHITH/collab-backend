@@ -208,3 +208,88 @@ def test_email_verification_duplicate_email_rejected(anon: APIClient, sent_codes
     r = client.post("/v1/auth/email/request/", {"email": "taken@example.com"}, format="json")
     assert r.status_code == 409
     assert r.json()["error"]["code"] == "EMAIL_ALREADY_IN_USE"
+
+
+def test_signup_complete_with_password_success(anon: APIClient, sent_codes: list[str]) -> None:
+    tokens = _login(anon, sent_codes, destination="9876500003")
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access']}")
+
+    payload = {
+        "role": "creator",
+        "fullName": "Priya Sharma",
+        "displayName": "priya_official",
+        "password": "StrongPassword123!",
+        "confirmPassword": "StrongPassword123!",
+    }
+    resp = client.post("/v1/auth/signup/complete/", payload, format="json")
+    assert resp.status_code == 201, resp.json()
+    user = User.objects.get(phone="+919876500003")
+    assert user.role == "creator"
+    assert user.has_usable_password() is True
+    assert user.check_password("StrongPassword123!") is True
+
+
+def test_signup_complete_with_password_validation_failures(anon: APIClient, sent_codes: list[str]) -> None:
+    tokens = _login(anon, sent_codes, destination="9876500004")
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access']}")
+
+    # 1. Passwords do not match
+    r1 = client.post(
+        "/v1/auth/signup/complete/",
+        {
+            "role": "creator",
+            "fullName": "Priya",
+            "password": "StrongPassword123!",
+            "confirmPassword": "DifferentPassword456!",
+        },
+        format="json",
+    )
+    assert r1.status_code == 400
+    assert "confirmPassword" in r1.json()["error"]["details"]
+    assert "Passwords do not match" in r1.json()["error"]["details"]["confirmPassword"][0]
+
+    # 2. Password is too short (< 8 chars)
+    r2 = client.post(
+        "/v1/auth/signup/complete/",
+        {
+            "role": "creator",
+            "fullName": "Priya",
+            "password": "short",
+            "confirmPassword": "short",
+        },
+        format="json",
+    )
+    assert r2.status_code == 400
+    assert "password" in r2.json()["error"]["details"]
+    assert "8 characters" in r2.json()["error"]["details"]["password"][0]
+
+    # 3. Password provided without confirmPassword
+    r3 = client.post(
+        "/v1/auth/signup/complete/",
+        {
+            "role": "creator",
+            "fullName": "Priya",
+            "password": "StrongPassword123!",
+        },
+        format="json",
+    )
+    assert r3.status_code == 400
+    assert "confirmPassword" in r3.json()["error"]["details"]
+
+    # 4. confirm_password snake_case alias works
+    r4 = client.post(
+        "/v1/auth/signup/complete/",
+        {
+            "role": "creator",
+            "fullName": "Priya Sharma",
+            "displayName": "priya",
+            "password": "StrongPassword123!",
+            "confirm_password": "StrongPassword123!",
+        },
+        format="json",
+    )
+    assert r4.status_code == 201
+    user = User.objects.get(phone="+919876500004")
+    assert user.check_password("StrongPassword123!") is True
