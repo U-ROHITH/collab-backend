@@ -12,8 +12,8 @@ admin.site.site_header = "Collab Ops"
 
 @admin.register(User)
 class UserAdmin(admin.ModelAdmin):
-    list_display = ("id", "email", "phone", "role", "status", "is_staff", "created_at")
-    list_filter = ("role", "status", "is_staff")
+    list_display = ("id", "email", "email_verified", "phone", "role", "status", "is_staff", "created_at")
+    list_filter = ("role", "status", "email_verified", "is_staff")
     search_fields = ("email", "phone", "full_name")
     readonly_fields = ("id", "password", "last_login", "created_at", "updated_at", "role", "is_superuser")
     exclude = ("user_permissions",)
