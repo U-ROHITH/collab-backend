@@ -119,11 +119,11 @@ def test_anonymous_discovery_endpoints(
     assert len(resp.json()["data"]) >= 1
 
 
-def test_creator_dob_and_response_time_hours(creator: APIClient, brand: APIClient) -> None:
-    # Update creator profile with DOB and responseTimeHours
+def test_creator_dob_and_replies_within(creator: APIClient, brand: APIClient) -> None:
+    # Update creator profile with DOB and repliesWithin (integer hours)
     payload = {
         "dob": "1998-05-20",
-        "responseTimeHours": 12,
+        "repliesWithin": 12,
     }
     resp = creator.patch("/v1/creators/me/", payload, format="json")
     assert resp.status_code == 200, resp.json()
@@ -131,7 +131,8 @@ def test_creator_dob_and_response_time_hours(creator: APIClient, brand: APIClien
 
     # Verify self output
     assert data["dob"] == "1998-05-20"
-    assert data["responseTimeHours"] == 12
+    assert data["repliesWithin"] == 12
+    assert "responseTimeHours" not in data, "responseTimeHours must be completely removed"
     today = date.today()
     expected_age = today.year - 1998 - ((today.month, today.day) < (5, 20))
     assert data["age"] == expected_age
@@ -140,14 +141,15 @@ def test_creator_dob_and_response_time_hours(creator: APIClient, brand: APIClien
     creator_id = data["id"]
     db_creator = Creator.objects.get(pk=creator_id)
     assert db_creator.dob == date(1998, 5, 20)
-    assert db_creator.response_time_hours == 12
+    assert db_creator.replies_within == 12
     assert db_creator.age == expected_age
 
-    # Verify public profile: responseTimeHours is visible, dob and age are strictly private
+    # Verify public profile: repliesWithin is visible as integer, dob and age are strictly private
     public_resp = brand.get(f"/v1/creators/{creator_id}/")
     assert public_resp.status_code == 200
     public_data = public_resp.json()["data"]
-    assert public_data["responseTimeHours"] == 12
+    assert public_data["repliesWithin"] == 12
+    assert "responseTimeHours" not in public_data, "responseTimeHours must be completely removed"
     assert "dob" not in public_data, "dob must be excluded from public profiles"
     assert "age" not in public_data, "age must be excluded from public profiles"
 
@@ -164,13 +166,18 @@ def test_creator_future_dob_rejected(creator: APIClient) -> None:
     assert "dob" in res_json["error"]["details"]
 
 
-def test_creator_response_time_hours_validation(creator: APIClient) -> None:
+def test_creator_replies_within_validation(creator: APIClient) -> None:
     # Less than minimum 1 hour
-    resp_zero = creator.patch("/v1/creators/me/", {"responseTimeHours": 0}, format="json")
+    resp_zero = creator.patch("/v1/creators/me/", {"repliesWithin": 0}, format="json")
     assert resp_zero.status_code == 400
-    assert "responseTimeHours" in resp_zero.json()["error"]["details"]
+    assert "repliesWithin" in resp_zero.json()["error"]["details"]
 
     # More than maximum 720 hours (30 days)
-    resp_excess = creator.patch("/v1/creators/me/", {"responseTimeHours": 800}, format="json")
+    resp_excess = creator.patch("/v1/creators/me/", {"repliesWithin": 800}, format="json")
     assert resp_excess.status_code == 400
-    assert "responseTimeHours" in resp_excess.json()["error"]["details"]
+    assert "repliesWithin" in resp_excess.json()["error"]["details"]
+
+    # Backward compatibility alias
+    resp_alias = creator.patch("/v1/creators/me/", {"responseTimeHours": 18}, format="json")
+    assert resp_alias.status_code == 200
+    assert resp_alias.json()["data"]["repliesWithin"] == 18

@@ -7,7 +7,7 @@ from PIL import Image, UnidentifiedImageError
 from rest_framework import serializers
 
 from apps.core.serializers import MoneyField, StrictSerializer
-from apps.creators.models import Creator, CreatorPackage, Gender, Platform, RepliesWithin
+from apps.creators.models import Creator, CreatorPackage, Gender, Platform
 
 MAX_PROFILE_PICTURE_SIZE_BYTES = 5 * 1024 * 1024  # 5MB
 
@@ -43,7 +43,7 @@ class CreatorCardOutput(serializers.ModelSerializer):
 
     displayName = serializers.CharField(source="display_name")  # noqa: N815
     primaryPlatform = serializers.CharField(source="primary_platform")  # noqa: N815
-    repliesWithin = serializers.CharField(source="replies_within")  # noqa: N815
+    repliesWithin = serializers.IntegerField(source="replies_within")  # noqa: N815
     followerCount = serializers.IntegerField(source="follower_count")  # noqa: N815
     avatarUrl = serializers.SerializerMethodField()  # noqa: N815
     profilePicture = serializers.SerializerMethodField()  # noqa: N815
@@ -108,10 +108,9 @@ class CreatorCardOutput(serializers.ModelSerializer):
 
 class CreatorDetailOutput(CreatorCardOutput):
     packages = serializers.SerializerMethodField()
-    responseTimeHours = serializers.IntegerField(source="response_time_hours")  # noqa: N815
 
     class Meta(CreatorCardOutput.Meta):
-        fields = (*CreatorCardOutput.Meta.fields, "packages", "responseTimeHours")
+        fields = (*CreatorCardOutput.Meta.fields, "packages")
 
     def get_packages(self, obj: Creator) -> list[dict[str, Any]]:
         packages = getattr(obj, "active_packages", None)
@@ -127,7 +126,6 @@ class CreatorSelfOutput(CreatorCardOutput):
     age = serializers.SerializerMethodField()
     gender = serializers.CharField(allow_null=True)
     genderDescription = serializers.CharField(source="gender_description", allow_null=True)  # noqa: N815
-    responseTimeHours = serializers.IntegerField(source="response_time_hours")  # noqa: N815
 
     class Meta(CreatorCardOutput.Meta):
         fields = (
@@ -138,7 +136,6 @@ class CreatorSelfOutput(CreatorCardOutput):
             "age",
             "gender",
             "genderDescription",
-            "responseTimeHours",
         )
 
     def get_age(self, obj: Creator) -> int | None:
@@ -236,8 +233,7 @@ class CreatorProfileInput(StrictSerializer):
     categories = serializers.ListField(child=serializers.CharField(max_length=40), max_length=5, required=False)
     location = serializers.CharField(max_length=80, required=False, allow_blank=True)
     primaryPlatform = serializers.ChoiceField(choices=Platform.choices, required=False)  # noqa: N815
-    repliesWithin = serializers.ChoiceField(choices=RepliesWithin.choices, required=False)  # noqa: N815
-    responseTimeHours = serializers.IntegerField(min_value=1, max_value=720, required=False)  # noqa: N815
+    repliesWithin = serializers.IntegerField(min_value=1, max_value=720, required=False)  # noqa: N815
     socialMediaUrls = serializers.JSONField(required=False)  # noqa: N815
     socialAccounts = serializers.ListField(child=SocialAccountInput(), required=False)  # noqa: N815
     dob = serializers.DateField(required=False, allow_null=True, format="%Y-%m-%d")
@@ -309,10 +305,29 @@ class CreatorProfileInput(StrictSerializer):
                     data["genderDescription"] = data["gender_description"]
                 del data["gender_description"]
 
+            if "replies_within" in data:
+                if "repliesWithin" not in data:
+                    data["repliesWithin"] = data["replies_within"]
+                del data["replies_within"]
+
+            if "responseTimeHours" in data:
+                if "repliesWithin" not in data:
+                    data["repliesWithin"] = data["responseTimeHours"]
+                del data["responseTimeHours"]
+
             if "response_time_hours" in data:
-                if "responseTimeHours" not in data:
-                    data["responseTimeHours"] = data["response_time_hours"]
+                if "repliesWithin" not in data:
+                    data["repliesWithin"] = data["response_time_hours"]
                 del data["response_time_hours"]
+
+            if "repliesWithin" in data and isinstance(data["repliesWithin"], str):
+                raw = data["repliesWithin"].strip().lower()
+                if raw.endswith("h") and raw[:-1].isdigit():
+                    data["repliesWithin"] = int(raw[:-1])
+                elif raw.endswith("d") and raw[:-1].isdigit():
+                    data["repliesWithin"] = int(raw[:-1]) * 24
+                elif raw.isdigit():
+                    data["repliesWithin"] = int(raw)
 
             if "date_of_birth" in data:
                 if "dob" not in data:

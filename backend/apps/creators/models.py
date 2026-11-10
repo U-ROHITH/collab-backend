@@ -28,13 +28,6 @@ class ApprovalStatus(models.TextChoices):
     REJECTED = "rejected", "Rejected"
 
 
-class RepliesWithin(models.TextChoices):
-    H1 = "1h", "1 hour"
-    H6 = "6h", "6 hours"
-    H24 = "24h", "24 hours"
-    D3 = "3d", "3 days"
-
-
 class Creator(BaseModel):
     # user is NULL for admin-created catalogue profiles until claimed.
     user = models.OneToOneField(
@@ -46,7 +39,7 @@ class Creator(BaseModel):
     categories = ArrayField(models.CharField(max_length=40), default=list, blank=True, size=5)
     location = models.CharField(max_length=80, blank=True)
     primary_platform = models.CharField(max_length=16, choices=Platform.choices, default=Platform.INSTAGRAM)
-    replies_within = models.CharField(max_length=4, choices=RepliesWithin.choices, default=RepliesWithin.H24)
+    replies_within = models.PositiveIntegerField(default=24, help_text="Average response time in hours")
     approval_status = models.CharField(
         max_length=16, choices=ApprovalStatus.choices, default=ApprovalStatus.PENDING, db_index=True
     )
@@ -60,7 +53,6 @@ class Creator(BaseModel):
     dob = models.DateField(null=True, blank=True)
     gender = models.CharField(max_length=20, choices=Gender.choices, null=True, blank=True)  # noqa: DJ001
     gender_description = models.CharField(max_length=120, null=True, blank=True)  # noqa: DJ001
-    response_time_hours = models.PositiveIntegerField(default=24, help_text="Average response time in hours")
     starting_price_paise = models.BigIntegerField(null=True, blank=True, db_index=True)
     rating_sum = models.PositiveIntegerField(default=0)
     rating_count = models.PositiveIntegerField(default=0)

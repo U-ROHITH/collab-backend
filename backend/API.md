@@ -32,7 +32,7 @@ React apps should generate types from the schema: `npx openapi-typescript http:/
 ### Profile & Avatar
 | Method | Path | Who | Notes |
 |---|---|---|---|
-| GET/PATCH | `/v1/creators/me/` | creator | Returns `CreatorSelfOutput` including **all own packages**, `socialAccounts`, `responseTimeHours`, and private fields `dob` (ISO `YYYY-MM-DD`), `age` (dynamically calculated from `dob`), `gender`, `genderDescription`. Accepts `displayName` / `name`, `bio`, `categories[]`, `location`, `primaryPlatform`, `repliesWithin`, `responseTimeHours` (1–720), `socialAccounts` (`[{"platform", "handle"}]`), `dob` (YYYY-MM-DD), `age`, `gender`, `genderDescription`, `profilePicture` [multipart, max 5MB], `avatarUrl`, `socialMediaUrls` |
+| GET/PATCH | `/v1/creators/me/` | creator | Returns `CreatorSelfOutput` including **all own packages**, `socialAccounts`, `repliesWithin` (integer hours), and private fields `dob` (ISO `YYYY-MM-DD`), `age` (dynamically calculated from `dob`), `gender`, `genderDescription`. Accepts `displayName` / `name`, `bio`, `categories[]`, `location`, `primaryPlatform`, `repliesWithin` (integer 1–720 hours), `socialAccounts` (`[{"platform", "handle"}]`), `dob` (YYYY-MM-DD), `age`, `gender`, `genderDescription`, `profilePicture` [multipart, max 5MB], `avatarUrl`, `socialMediaUrls` |
 | POST | `/v1/uploads/` | authenticated | Multipart file upload (`file`, optional `kind: "avatar"`). 5MB limit, image-only. Auto-binds avatar to creator's profile |
 | POST | `/v1/creators/me/avatar/` | creator | Dedicated multipart avatar upload (`avatar` or `file`). Alias of `/v1/uploads/` |
 
@@ -64,7 +64,7 @@ Creators expose **service tiers** (packages) on their public profile. Each packa
 | Method | Path | Who | Notes |
 |---|---|---|---|
 | GET | `/v1/creators/?q=&category=&location=&platform=&verified=&minPrice=&maxPrice=&minFollowers=` | anyone (`AllowAny`) | Lists approved creators only. Anonymous browsing allowed. `startingPrice` reflects cheapest active package |
-| GET | `/v1/creators/{id}/` | anyone (`AllowAny`) | Full profile (`CreatorDetailOutput`) — includes **only active packages** sorted by price ascending, `responseTimeHours`. `startingPrice` = cheapest active package. Excludes private fields (`dob`, `age`, `gender`, `genderDescription`) |
+| GET | `/v1/creators/{id}/` | anyone (`AllowAny`) | Full profile (`CreatorDetailOutput`) — includes **only active packages** sorted by price ascending, `repliesWithin` (integer hours). `startingPrice` = cheapest active package. Excludes private fields (`dob`, `age`, `gender`, `genderDescription`) |
 | GET | `/v1/creators/{id}/reviews/` | anyone (`AllowAny`) | Paginated review list |
 
 ## Brands, lists, cart

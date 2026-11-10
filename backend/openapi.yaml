@@ -2649,7 +2649,7 @@ components:
         primaryPlatform:
           type: string
         repliesWithin:
-          type: string
+          type: integer
         verified:
           type: boolean
         followerCount:
@@ -2724,7 +2724,7 @@ components:
         primaryPlatform:
           type: string
         repliesWithin:
-          type: string
+          type: integer
         verified:
           type: boolean
         followerCount:
@@ -2761,8 +2761,6 @@ components:
             type: object
             additionalProperties: {}
           readOnly: true
-        responseTimeHours:
-          type: integer
       required:
       - avatarUrl
       - displayName
@@ -2773,7 +2771,6 @@ components:
       - profilePicture
       - rating
       - repliesWithin
-      - responseTimeHours
       - reviewCount
       - slug
       - socialAccounts
@@ -2802,8 +2799,6 @@ components:
         primaryPlatform:
           $ref: '#/components/schemas/PlatformEnum'
         repliesWithin:
-          $ref: '#/components/schemas/RepliesWithinEnum'
-        responseTimeHours:
           type: integer
           maximum: 720
           minimum: 1
@@ -2874,7 +2869,7 @@ components:
         primaryPlatform:
           type: string
         repliesWithin:
-          type: string
+          type: integer
         verified:
           type: boolean
         followerCount:
@@ -2926,8 +2921,6 @@ components:
         genderDescription:
           type: string
           nullable: true
-        responseTimeHours:
-          type: integer
       required:
       - age
       - approvalStatus
@@ -2943,7 +2936,6 @@ components:
       - profilePicture
       - rating
       - repliesWithin
-      - responseTimeHours
       - reviewCount
       - slug
       - socialAccounts
@@ -3878,8 +3870,6 @@ components:
         primaryPlatform:
           $ref: '#/components/schemas/PlatformEnum'
         repliesWithin:
-          $ref: '#/components/schemas/RepliesWithinEnum'
-        responseTimeHours:
           type: integer
           maximum: 720
           minimum: 1
@@ -4085,18 +4075,6 @@ components:
           minLength: 1
       required:
       - refresh
-    RepliesWithinEnum:
-      enum:
-      - 1h
-      - 6h
-      - 24h
-      - 3d
-      type: string
-      description: |-
-        * `1h` - 1 hour
-        * `6h` - 6 hours
-        * `24h` - 24 hours
-        * `3d` - 3 days
     ReportsOverviewOutput:
       type: object
       properties:
