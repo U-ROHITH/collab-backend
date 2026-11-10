@@ -43,6 +43,26 @@ paths:
               schema:
                 $ref: '#/components/schemas/EmailVerificationVerifyOutput'
           description: ''
+  /v1/auth/login/:
+    post:
+      operationId: auth_login_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginInputRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokensOutput'
+          description: ''
   /v1/auth/logout/:
     post:
       operationId: auth_logout_create
@@ -3157,6 +3177,21 @@ components:
       - creatorCount
       - id
       - name
+    LoginInputRequest:
+      type: object
+      properties:
+        identifier:
+          type: string
+          minLength: 1
+          maxLength: 254
+        password:
+          type: string
+          writeOnly: true
+          minLength: 1
+          maxLength: 128
+      required:
+      - identifier
+      - password
     MeOutput:
       type: object
       properties:

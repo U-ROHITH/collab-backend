@@ -26,6 +26,11 @@ class OtpVerifyInput(StrictSerializer):
     code = serializers.RegexField(r"^\d{6}$")
 
 
+class LoginInput(StrictSerializer):
+    identifier = serializers.CharField(max_length=254)
+    password = serializers.CharField(max_length=128, write_only=True)
+
+
 class MeOutput(serializers.ModelSerializer):
     fullName = serializers.CharField(source="full_name")  # noqa: N815
     emailVerified = serializers.BooleanField(source="email_verified")  # noqa: N815

@@ -3,6 +3,7 @@ from django.urls import path
 from apps.identity import views
 
 urlpatterns = [
+    path("login/", views.LoginView.as_view()),
     path("otp/request/", views.OtpRequestView.as_view()),
     path("otp/verify/", views.OtpVerifyView.as_view()),
     path("email/request/", views.EmailVerificationRequestView.as_view()),

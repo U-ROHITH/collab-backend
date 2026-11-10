@@ -8,12 +8,13 @@ from uuid import UUID
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from apps.core.exceptions import Conflict, DomainError, TooManyRequests
+from apps.core.exceptions import Conflict, DomainError, Forbidden, TooManyRequests
 from apps.identity import providers
-from apps.identity.models import AuditLog, OtpChallenge, OtpChannel, Role, User
+from apps.identity.models import AuditLog, OtpChallenge, OtpChannel, Role, User, UserStatus
 
 _INDIAN_MOBILE = re.compile(r"^(?:\+?91)?([6-9]\d{9})$")
 
@@ -28,6 +29,12 @@ class OtpDeliveryFailed(DomainError):
     status_code = 503
     code = "OTP_DELIVERY_FAILED"
     message = "We couldn't send the code right now. Please try again."
+
+
+class AuthInvalid(DomainError):
+    status_code = 401
+    code = "AUTH_INVALID"
+    message = "Invalid email/phone or password."
 
 
 def normalize_destination(channel: str, raw: str) -> str:
@@ -174,6 +181,48 @@ def verify_email_challenge(*, user: User, challenge_id: UUID, code: str) -> User
 def issue_tokens(user: User) -> AuthResult:
     refresh = RefreshToken.for_user(user)
     return AuthResult(user=user, access=str(refresh.access_token), refresh=str(refresh))
+
+
+def find_user_by_identifier(ident: str) -> User | None:
+    ident = ident.strip()
+    if not ident:
+        return None
+    if "@" in ident:
+        return User.objects.filter(email__iexact=ident).first()
+    # Phone normalization
+    clean_digits = re.sub(r"[\s\-()]", "", ident)
+    m = _INDIAN_MOBILE.match(clean_digits)
+    candidates = [ident]
+    if m:
+        candidates.extend([f"+91{m.group(1)}", m.group(1)])
+    return User.objects.filter(Q(phone__in=candidates) | Q(email__iexact=ident)).first()
+
+
+def login_with_password(*, identifier: str, password: str) -> AuthResult:
+    user = find_user_by_identifier(identifier)
+    if user is None:
+        raise AuthInvalid()
+
+    if not user.has_usable_password():
+        raise AuthInvalid()
+
+    if not user.check_password(password):
+        raise AuthInvalid()
+
+    if user.status == UserStatus.SUSPENDED:
+        raise Forbidden("Your account has been suspended.", code="ACCOUNT_SUSPENDED")
+
+    if user.status == UserStatus.DEACTIVATED or not user.is_active:
+        raise Forbidden("Your account has been deactivated.", code="ACCOUNT_DEACTIVATED")
+
+    AuditLog.objects.create(
+        actor=user,
+        action="user.login_password",
+        entity_type="user",
+        entity_id=str(user.pk),
+        metadata={"identifier": identifier},
+    )
+    return issue_tokens(user)
 
 
 def complete_signup(

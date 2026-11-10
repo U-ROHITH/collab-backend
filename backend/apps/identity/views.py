@@ -22,6 +22,7 @@ from apps.identity.serializers import (
     EmailVerificationRequestOutput,
     EmailVerificationVerifyInput,
     EmailVerificationVerifyOutput,
+    LoginInput,
     MeOutput,
     MeUpdateInput,
     OtpRequestInput,
@@ -67,6 +68,24 @@ class OtpVerifyView(APIView):
         data = OtpVerifyInput(data=request.data)
         data.is_valid(raise_exception=True)
         result = services.verify_otp(challenge_id=data.validated_data["challengeId"], code=data.validated_data["code"])
+        return Response(
+            AuthTokensOutput({"access": result.access, "refresh": result.refresh, "user": result.user}).data
+        )
+
+
+class LoginView(APIView):
+    authentication_classes: list = []
+    permission_classes = [AllowAny]
+    throttle_scope = "otp_verify"
+
+    @extend_schema(request=LoginInput, responses=AuthTokensOutput)
+    def post(self, request: Request) -> Response:
+        data = LoginInput(data=request.data)
+        data.is_valid(raise_exception=True)
+        result = services.login_with_password(
+            identifier=data.validated_data["identifier"],
+            password=data.validated_data["password"],
+        )
         return Response(
             AuthTokensOutput({"access": result.access, "refresh": result.refresh, "user": result.user}).data
         )

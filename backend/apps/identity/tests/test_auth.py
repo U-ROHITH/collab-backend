@@ -293,3 +293,110 @@ def test_signup_complete_with_password_validation_failures(anon: APIClient, sent
     assert r4.status_code == 201
     user = User.objects.get(phone="+919876500004")
     assert user.check_password("StrongPassword123!") is True
+
+
+def test_password_login_success_with_email_and_phone(anon: APIClient) -> None:
+    # 1. Create a user with password
+    user = User.objects.create_user(
+        email="creator@example.com",
+        phone="+919876543210",
+        password="MySecretPassword123!",
+        role="creator",
+        full_name="Creator User",
+    )
+
+    # 2. Login using email
+    resp_email = anon.post(
+        "/v1/auth/login/",
+        {"identifier": "creator@example.com", "password": "MySecretPassword123!"},
+        format="json",
+    )
+    assert resp_email.status_code == 200, resp_email.json()
+    data = resp_email.json()["data"]
+    assert data["access"]
+    assert data["refresh"]
+    assert data["user"]["email"] == "creator@example.com"
+    assert data["user"]["role"] == "creator"
+    assert data["user"]["needsOnboarding"] is False
+
+    # 3. Login using 10-digit phone number
+    resp_phone = anon.post(
+        "/v1/auth/login/",
+        {"identifier": "9876543210", "password": "MySecretPassword123!"},
+        format="json",
+    )
+    assert resp_phone.status_code == 200
+    assert resp_phone.json()["data"]["user"]["id"] == str(user.id)
+
+    # 4. Login using full E.164 phone number
+    resp_e164 = anon.post(
+        "/v1/auth/login/",
+        {"identifier": "+919876543210", "password": "MySecretPassword123!"},
+        format="json",
+    )
+    assert resp_e164.status_code == 200
+
+
+def test_password_login_failures(anon: APIClient) -> None:
+    user = User.objects.create_user(
+        email="member@example.com",
+        phone="+919876511111",
+        password="ValidPassword123!",
+        role="brand",
+        full_name="Brand Member",
+    )
+
+    # 1. Non-existent identifier -> 401
+    r_no_user = anon.post(
+        "/v1/auth/login/",
+        {"identifier": "nobody@example.com", "password": "AnyPassword123!"},
+        format="json",
+    )
+    assert r_no_user.status_code == 401
+    assert r_no_user.json()["error"]["code"] == "AUTH_INVALID"
+
+    # 2. Wrong password -> 401
+    r_wrong_pw = anon.post(
+        "/v1/auth/login/",
+        {"identifier": "member@example.com", "password": "WrongPassword!"},
+        format="json",
+    )
+    assert r_wrong_pw.status_code == 401
+    assert r_wrong_pw.json()["error"]["code"] == "AUTH_INVALID"
+
+    # 3. User with unusable password (e.g. OTP-only account) -> 401
+    otp_only_user = User.objects.create_user(
+        email="otp_only@example.com",
+        phone="+919876522222",
+        role="creator",
+    )
+    assert otp_only_user.has_usable_password() is False
+    r_unusable = anon.post(
+        "/v1/auth/login/",
+        {"identifier": "otp_only@example.com", "password": "SomePassword123!"},
+        format="json",
+    )
+    assert r_unusable.status_code == 401
+    assert r_unusable.json()["error"]["code"] == "AUTH_INVALID"
+
+    # 4. Suspended user -> 403
+    user.status = UserStatus.SUSPENDED
+    user.save(update_fields=["status"])
+    r_suspended = anon.post(
+        "/v1/auth/login/",
+        {"identifier": "member@example.com", "password": "ValidPassword123!"},
+        format="json",
+    )
+    assert r_suspended.status_code == 403
+    assert r_suspended.json()["error"]["code"] == "ACCOUNT_SUSPENDED"
+
+    # 5. Deactivated user -> 403
+    user.status = UserStatus.DEACTIVATED
+    user.save(update_fields=["status"])
+    r_deactivated = anon.post(
+        "/v1/auth/login/",
+        {"identifier": "member@example.com", "password": "ValidPassword123!"},
+        format="json",
+    )
+    assert r_deactivated.status_code == 403
+    assert r_deactivated.json()["error"]["code"] == "ACCOUNT_DEACTIVATED"
