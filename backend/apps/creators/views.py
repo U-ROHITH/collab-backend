@@ -12,6 +12,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.core import cache as cache_utils
 from apps.core.exceptions import NotFound
 from apps.creators import selectors, services
 from apps.creators.models import Creator
@@ -50,6 +51,7 @@ class CreatorMeView(APIView):
         data = CreatorProfileInput(data=request.data, partial=True)
         data.is_valid(raise_exception=True)
         creator = services.update_creator_profile(creator=_my_creator(request), data=data.validated_data)
+        cache_utils.invalidate_creator_cache(creator.pk)
         return Response(CreatorSelfOutput(creator, context={"request": request}).data)
 
     @extend_schema(request=CreatorProfileInput, responses=CreatorSelfOutput)
@@ -88,6 +90,7 @@ class UploadView(APIView):
             creator.avatar_url = public_url
             creator.profile_picture = saved_path
             creator.save(update_fields=["avatar_url", "profile_picture", "updated_at"])
+            cache_utils.invalidate_creator_cache(creator.pk)
 
         return Response(
             {
@@ -115,6 +118,7 @@ class MyPackagesView(APIView):
         data = PackageInput(data=request.data)
         data.is_valid(raise_exception=True)
         package = services.create_package(creator=_my_creator(request), data=data.validated_data)
+        cache_utils.invalidate_creator_cache(package.creator_id)
         return Response(PackageOutput(package).data, status=status.HTTP_201_CREATED)
 
 
@@ -127,11 +131,14 @@ class MyPackageDetailView(APIView):
         data = PackageInput(data=request.data, partial=True)
         data.is_valid(raise_exception=True)
         package = services.update_package(creator=_my_creator(request), package_id=package_id, data=data.validated_data)
+        cache_utils.invalidate_creator_cache(package.creator_id)
         return Response(PackageOutput(package).data)
 
     @extend_schema(responses={204: None})
     def delete(self, request: Request, package_id: UUID) -> Response:
-        services.deactivate_package(creator=_my_creator(request), package_id=package_id)
+        creator = _my_creator(request)
+        services.deactivate_package(creator=creator, package_id=package_id)
+        cache_utils.invalidate_creator_cache(creator.pk)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -140,6 +147,7 @@ class CreatorSearchView(ListAPIView):
 
     permission_classes = [AllowAny]
     serializer_class = CreatorCardOutput
+    throttle_scope = "anon_discovery"
 
     @extend_schema(parameters=[CreatorSearchParams])
     def get(self, request: Request, *args: object, **kwargs: object) -> Response:
@@ -153,10 +161,21 @@ class CreatorSearchView(ListAPIView):
 
 class CreatorDetailView(APIView):
     permission_classes = [AllowAny]
+    throttle_scope = "anon_discovery"
 
     @extend_schema(responses=CreatorDetailOutput)
     def get(self, request: Request, creator_id: UUID) -> Response:
+        cached = cache_utils.get_cached_creator_detail(creator_id)
+        if cached is not None:
+            resp = Response(cached)
+            resp["X-Cache"] = "HIT"
+            return resp
+
         creator = selectors.get_public_creator(creator_id)
         if creator is None:
             raise NotFound()
-        return Response(CreatorDetailOutput(creator, context={"request": request}).data)
+        data = CreatorDetailOutput(creator, context={"request": request}).data
+        cache_utils.set_cached_creator_detail(creator_id, data)
+        resp = Response(data)
+        resp["X-Cache"] = "MISS"
+        return resp

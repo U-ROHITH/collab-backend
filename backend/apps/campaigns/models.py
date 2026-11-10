@@ -1,3 +1,4 @@
+from django.contrib.postgres.indexes import GinIndex
 from django.db import models
 from django.db.models import F, Q
 
@@ -33,7 +34,14 @@ class Campaign(BaseModel):
             ),
             models.CheckConstraint(condition=Q(status__in=CampaignStatus.values), name="campaign_status_valid"),
         ]
-        indexes = [models.Index(fields=["status", "closes_at"])]
+        indexes = [
+            models.Index(fields=["status", "closes_at"]),
+            GinIndex(
+                fields=["title", "brief"],
+                name="campaign_search_trgm_idx",
+                opclasses=["gin_trgm_ops", "gin_trgm_ops"],
+            ),
+        ]
 
 
 class BidStatus(models.TextChoices):

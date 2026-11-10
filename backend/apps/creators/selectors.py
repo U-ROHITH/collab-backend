@@ -1,6 +1,6 @@
 from typing import Any
 
-from django.db.models import Min, Prefetch, Q, QuerySet
+from django.db.models import Prefetch, Q, QuerySet
 
 from apps.creators.models import ApprovalStatus, Creator, CreatorPackage
 
@@ -8,10 +8,8 @@ from apps.creators.models import ApprovalStatus, Creator, CreatorPackage
 def public_creators() -> QuerySet[Creator]:
     """Only approved creators are ever visible in discovery."""
     active_packages = CreatorPackage.objects.filter(active=True)
-    return (
-        Creator.objects.filter(approval_status=ApprovalStatus.APPROVED)
-        .annotate(starting_price=Min("packages__price_paise", filter=Q(packages__active=True)))
-        .prefetch_related(Prefetch("packages", queryset=active_packages, to_attr="active_packages"))
+    return Creator.objects.filter(approval_status=ApprovalStatus.APPROVED).prefetch_related(
+        Prefetch("packages", queryset=active_packages, to_attr="active_packages")
     )
 
 
@@ -28,9 +26,9 @@ def search_creators(params: dict[str, Any]) -> QuerySet[Creator]:
     if params.get("verified"):
         qs = qs.filter(verified=True)
     if (min_price := params.get("minPrice")) is not None:
-        qs = qs.filter(starting_price__gte=min_price)
+        qs = qs.filter(starting_price_paise__gte=min_price)
     if (max_price := params.get("maxPrice")) is not None:
-        qs = qs.filter(starting_price__lte=max_price)
+        qs = qs.filter(starting_price_paise__lte=max_price)
     if (min_followers := params.get("minFollowers")) is not None:
         qs = qs.filter(follower_count__gte=min_followers)
     return qs

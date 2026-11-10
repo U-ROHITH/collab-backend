@@ -13,6 +13,7 @@ cd backend && uv sync
 uv run python manage.py migrate
 uv run python manage.py runserver  # API
 uv run celery -A config worker -B -l info   # jobs
+cd backend && uv run python manage.py runserver 0.0.0.0:8000
 ```
 
 Never commit `.env` or paste secrets into chat or tickets. See [docs/03-security.md §8](docs/03-security.md).

@@ -18,6 +18,7 @@ from apps.campaigns.serializers import (
     CampaignOutput,
     CampaignSearchParams,
 )
+from apps.core import cache as cache_utils
 from apps.core.exceptions import NotFound
 from apps.core.pagination import EnvelopeCursorPagination
 from apps.identity.models import Role
@@ -64,7 +65,19 @@ class CampaignListCreateView(ListAPIView):
 
     @extend_schema(parameters=[CampaignSearchParams], responses=CampaignOutput(many=True))
     def get(self, request: Request, *args: object, **kwargs: object) -> Response:
-        return super().get(request, *args, **kwargs)
+        is_anon = not getattr(request.user, "is_authenticated", False)
+        if is_anon:
+            cached_data = cache_utils.get_cached_campaigns(request.query_params.dict())
+            if cached_data is not None:
+                resp = Response(cached_data)
+                resp["X-Cache"] = "HIT"
+                return resp
+
+        response = super().get(request, *args, **kwargs)
+        if is_anon and response.status_code == 200:
+            cache_utils.set_cached_campaigns(request.query_params.dict(), response.data)
+            response["X-Cache"] = "MISS"
+        return response
 
     def get_queryset(self):  # type: ignore[no-untyped-def]
         params = CampaignSearchParams(data=self.request.query_params.dict())
@@ -85,6 +98,7 @@ class CampaignListCreateView(ListAPIView):
         data = CampaignInput(data=request.data)
         data.is_valid(raise_exception=True)
         campaign = services.create_campaign(brand=my_brand(request), data=data.validated_data)
+        cache_utils.invalidate_campaigns_cache()
         return Response(CampaignOutput(campaign).data, status=status.HTTP_201_CREATED)
 
 
@@ -106,6 +120,7 @@ class CampaignDetailView(APIView):
         data = CampaignInput(data=request.data, partial=True)
         data.is_valid(raise_exception=True)
         campaign = services.update_campaign(brand=my_brand(request), campaign_id=campaign_id, data=data.validated_data)
+        cache_utils.invalidate_campaigns_cache()
         return Response(CampaignOutput(campaign).data)
 
 
@@ -114,7 +129,9 @@ class CampaignCloseView(APIView):
 
     @extend_schema(request=None, responses=CampaignOutput)
     def post(self, request: Request, campaign_id: UUID) -> Response:
-        return Response(CampaignOutput(services.close_campaign(brand=my_brand(request), campaign_id=campaign_id)).data)
+        campaign = services.close_campaign(brand=my_brand(request), campaign_id=campaign_id)
+        cache_utils.invalidate_campaigns_cache()
+        return Response(CampaignOutput(campaign).data)
 
 
 class BidListCreateView(ListAPIView):

@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
+from django.contrib.postgres.indexes import GinIndex
 from django.db import models
 from django.db.models import Q
 
@@ -58,6 +59,7 @@ class Creator(BaseModel):
     age = models.PositiveSmallIntegerField(null=True, blank=True)
     gender = models.CharField(max_length=20, choices=Gender.choices, null=True, blank=True)  # noqa: DJ001
     gender_description = models.CharField(max_length=120, null=True, blank=True)  # noqa: DJ001
+    starting_price_paise = models.BigIntegerField(null=True, blank=True, db_index=True)
     rating_sum = models.PositiveIntegerField(default=0)
     rating_count = models.PositiveIntegerField(default=0)
 
@@ -72,11 +74,23 @@ class Creator(BaseModel):
                 condition=Q(gender__isnull=True) | Q(gender__in=Gender.values), name="creator_gender_valid"
             ),
         ]
-        indexes = [models.Index(fields=["approval_status", "created_at"])]
+        indexes = [
+            models.Index(fields=["approval_status", "created_at"]),
+            models.Index(fields=["approval_status", "starting_price_paise"]),
+            GinIndex(
+                fields=["display_name", "bio", "location"],
+                name="creator_search_trgm_idx",
+                opclasses=["gin_trgm_ops", "gin_trgm_ops", "gin_trgm_ops"],
+            ),
+        ]
 
     @property
     def is_approved(self) -> bool:
         return self.approval_status == ApprovalStatus.APPROVED
+
+    @property
+    def starting_price(self) -> int | None:
+        return self.starting_price_paise
 
     @property
     def rating(self) -> float | None:

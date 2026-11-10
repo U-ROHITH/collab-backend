@@ -112,8 +112,21 @@ def set_approval(*, actor: User, creator_id: UUID, status: str) -> Creator:
     return creator
 
 
+def sync_creator_starting_price(creator_id: UUID | Any) -> int | None:
+    cheapest = (
+        CreatorPackage.objects.filter(creator_id=creator_id, active=True)
+        .order_by("price_paise")
+        .values_list("price_paise", flat=True)
+        .first()
+    )
+    Creator.objects.filter(pk=creator_id).update(starting_price_paise=cheapest)
+    return cheapest
+
+
 def create_package(*, creator: Creator, data: dict[str, Any]) -> CreatorPackage:
-    return CreatorPackage.objects.create(creator=creator, **{_PACKAGE_FIELDS[k]: v for k, v in data.items()})
+    pkg = CreatorPackage.objects.create(creator=creator, **{_PACKAGE_FIELDS[k]: v for k, v in data.items()})
+    sync_creator_starting_price(creator.pk)
+    return pkg
 
 
 def update_package(*, creator: Creator, package_id: UUID, data: dict[str, Any]) -> CreatorPackage:
@@ -124,6 +137,7 @@ def update_package(*, creator: Creator, package_id: UUID, data: dict[str, Any]) 
     for field, value in changes.items():
         setattr(package, field, value)
     package.save(update_fields=[*changes.keys(), "updated_at"])
+    sync_creator_starting_price(creator.pk)
     return package
 
 
@@ -132,6 +146,7 @@ def deactivate_package(*, creator: Creator, package_id: UUID) -> None:
     updated = CreatorPackage.objects.filter(pk=package_id, creator=creator).update(active=False)
     if not updated:
         raise NotFound()
+    sync_creator_starting_price(creator.pk)
 
 
 def apply_review(*, creator_id: UUID, stars: int) -> None:

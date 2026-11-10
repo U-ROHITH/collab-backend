@@ -8,6 +8,8 @@ React apps should generate types from the schema: `npx openapi-typescript http:/
 - Every response: `{ "success", "data", "error", "meta" }`. Errors: `error.code` (stable, switch on it), `error.message`, `error.requestId`, plus `error.details` (field errors) on validation failures.
 - Money: integer **paise**, e.g. `{ "amount": 1118000, "currency": "INR" }`. Request fields like `price`/`budget` are paise too.
 - Lists: cursor pagination with `?limit=` (max 50) and `?cursor=` from `meta.nextCursor`.
+- Caching: Public creator details and open campaigns are cached in Redis with a 10-minute TTL, returning `X-Cache: HIT` or `MISS` headers. Cache is automatically invalidated upon creator profile/package/avatar mutations or campaign creation/closing.
+- Full-text search: Powered by PostgreSQL GIN Trigram (`pg_trgm`) indexes across `title`, `brief`, `display_name`, `bio`, and `location`.
 - Unknown request fields are rejected with `400` (mass-assignment protection).
 - If something isn't yours, you get `404`, not `403`.
 
