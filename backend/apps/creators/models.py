@@ -57,8 +57,10 @@ class Creator(BaseModel):
     social_media_links = models.JSONField(default=dict, blank=True)
     social_accounts = models.JSONField(default=list, blank=True)
     age = models.PositiveSmallIntegerField(null=True, blank=True)
+    dob = models.DateField(null=True, blank=True)
     gender = models.CharField(max_length=20, choices=Gender.choices, null=True, blank=True)  # noqa: DJ001
     gender_description = models.CharField(max_length=120, null=True, blank=True)  # noqa: DJ001
+    response_time_hours = models.PositiveIntegerField(default=24, help_text="Average response time in hours")
     starting_price_paise = models.BigIntegerField(null=True, blank=True, db_index=True)
     rating_sum = models.PositiveIntegerField(default=0)
     rating_count = models.PositiveIntegerField(default=0)

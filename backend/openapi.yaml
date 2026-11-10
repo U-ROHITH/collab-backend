@@ -2761,6 +2761,8 @@ components:
             type: object
             additionalProperties: {}
           readOnly: true
+        responseTimeHours:
+          type: integer
       required:
       - avatarUrl
       - displayName
@@ -2771,6 +2773,7 @@ components:
       - profilePicture
       - rating
       - repliesWithin
+      - responseTimeHours
       - reviewCount
       - slug
       - socialAccounts
@@ -2800,11 +2803,19 @@ components:
           $ref: '#/components/schemas/PlatformEnum'
         repliesWithin:
           $ref: '#/components/schemas/RepliesWithinEnum'
+        responseTimeHours:
+          type: integer
+          maximum: 720
+          minimum: 1
         socialMediaUrls: {}
         socialAccounts:
           type: array
           items:
             $ref: '#/components/schemas/SocialAccountInputRequest'
+        dob:
+          type: string
+          format: date
+          nullable: true
         age:
           type: integer
           maximum: 120
@@ -2901,20 +2912,28 @@ components:
           items:
             $ref: '#/components/schemas/PackageOutput'
           readOnly: true
+        dob:
+          type: string
+          format: date
+          nullable: true
         age:
           type: integer
           nullable: true
+          readOnly: true
         gender:
           type: string
           nullable: true
         genderDescription:
           type: string
           nullable: true
+        responseTimeHours:
+          type: integer
       required:
       - age
       - approvalStatus
       - avatarUrl
       - displayName
+      - dob
       - followerCount
       - gender
       - genderDescription
@@ -2924,6 +2943,7 @@ components:
       - profilePicture
       - rating
       - repliesWithin
+      - responseTimeHours
       - reviewCount
       - slug
       - socialAccounts
@@ -3859,11 +3879,19 @@ components:
           $ref: '#/components/schemas/PlatformEnum'
         repliesWithin:
           $ref: '#/components/schemas/RepliesWithinEnum'
+        responseTimeHours:
+          type: integer
+          maximum: 720
+          minimum: 1
         socialMediaUrls: {}
         socialAccounts:
           type: array
           items:
             $ref: '#/components/schemas/SocialAccountInputRequest'
+        dob:
+          type: string
+          format: date
+          nullable: true
         age:
           type: integer
           maximum: 120

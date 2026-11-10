@@ -1,4 +1,5 @@
 import secrets
+from datetime import date
 from typing import Any
 from uuid import UUID
 
@@ -18,6 +19,8 @@ _PROFILE_FIELDS = {
     "location": "location",
     "primaryPlatform": "primary_platform",
     "repliesWithin": "replies_within",
+    "responseTimeHours": "response_time_hours",
+    "response_time_hours": "response_time_hours",
     "profilePicture": "profile_picture",
     "profile_picture": "profile_picture",
     "avatar": "profile_picture",
@@ -30,6 +33,8 @@ _PROFILE_FIELDS = {
     "socialMediaLinks": "social_media_links",
     "socialAccounts": "social_accounts",
     "social_accounts": "social_accounts",
+    "dob": "dob",
+    "date_of_birth": "dob",
     "age": "age",
     "gender": "gender",
     "genderDescription": "gender_description",
@@ -56,6 +61,10 @@ def create_creator_for_user(*, user: User, display_name: str, **extra: Any) -> C
     for k, v in extra.items():
         if k in _PROFILE_FIELDS:
             fields[_PROFILE_FIELDS[k]] = v
+    if "dob" in fields and fields["dob"] and "age" not in fields:
+        today = date.today()
+        d = fields["dob"]
+        fields["age"] = today.year - d.year - ((today.month, today.day) < (d.month, d.day))
     creator = Creator.objects.create(user=user, display_name=display_name, slug=_unique_slug(display_name), **fields)
     if "profile_picture" in fields and bool(creator.profile_picture):
         creator.avatar_url = creator.profile_picture.url
@@ -83,6 +92,18 @@ def update_creator_profile(*, creator: Creator, data: dict[str, Any]) -> Creator
         return creator
 
     fields_to_update = set(changes.keys())
+    if "dob" in changes:
+        if changes["dob"]:
+            today = date.today()
+            d = changes["dob"]
+            calculated_age = today.year - d.year - ((today.month, today.day) < (d.month, d.day))
+            if "age" not in changes:
+                creator.age = calculated_age
+                fields_to_update.add("age")
+        elif "age" not in changes:
+            creator.age = None
+            fields_to_update.add("age")
+
     creator.save(update_fields=[*fields_to_update, "updated_at"])
 
     if "profile_picture" in changes and bool(creator.profile_picture):

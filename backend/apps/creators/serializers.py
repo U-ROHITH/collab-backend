@@ -1,5 +1,6 @@
 import json
 from collections.abc import Mapping
+from datetime import date
 from typing import Any
 
 from PIL import Image, UnidentifiedImageError
@@ -107,9 +108,10 @@ class CreatorCardOutput(serializers.ModelSerializer):
 
 class CreatorDetailOutput(CreatorCardOutput):
     packages = serializers.SerializerMethodField()
+    responseTimeHours = serializers.IntegerField(source="response_time_hours")  # noqa: N815
 
     class Meta(CreatorCardOutput.Meta):
-        fields = (*CreatorCardOutput.Meta.fields, "packages")
+        fields = (*CreatorCardOutput.Meta.fields, "packages", "responseTimeHours")
 
     def get_packages(self, obj: Creator) -> list[dict[str, Any]]:
         packages = getattr(obj, "active_packages", None)
@@ -121,12 +123,29 @@ class CreatorDetailOutput(CreatorCardOutput):
 class CreatorSelfOutput(CreatorCardOutput):
     approvalStatus = serializers.CharField(source="approval_status")  # noqa: N815
     packages = PackageOutput(many=True, read_only=True)
-    age = serializers.IntegerField(allow_null=True)
+    dob = serializers.DateField(format="%Y-%m-%d", allow_null=True)
+    age = serializers.SerializerMethodField()
     gender = serializers.CharField(allow_null=True)
     genderDescription = serializers.CharField(source="gender_description", allow_null=True)  # noqa: N815
+    responseTimeHours = serializers.IntegerField(source="response_time_hours")  # noqa: N815
 
     class Meta(CreatorCardOutput.Meta):
-        fields = (*CreatorCardOutput.Meta.fields, "approvalStatus", "packages", "age", "gender", "genderDescription")
+        fields = (
+            *CreatorCardOutput.Meta.fields,
+            "approvalStatus",
+            "packages",
+            "dob",
+            "age",
+            "gender",
+            "genderDescription",
+            "responseTimeHours",
+        )
+
+    def get_age(self, obj: Creator) -> int | None:
+        if obj.dob:
+            today = date.today()
+            return today.year - obj.dob.year - ((today.month, today.day) < (obj.dob.month, obj.dob.day))
+        return obj.age
 
 
 class ProfilePictureField(serializers.ImageField):
@@ -218,8 +237,10 @@ class CreatorProfileInput(StrictSerializer):
     location = serializers.CharField(max_length=80, required=False, allow_blank=True)
     primaryPlatform = serializers.ChoiceField(choices=Platform.choices, required=False)  # noqa: N815
     repliesWithin = serializers.ChoiceField(choices=RepliesWithin.choices, required=False)  # noqa: N815
+    responseTimeHours = serializers.IntegerField(min_value=1, max_value=720, required=False)  # noqa: N815
     socialMediaUrls = serializers.JSONField(required=False)  # noqa: N815
     socialAccounts = serializers.ListField(child=SocialAccountInput(), required=False)  # noqa: N815
+    dob = serializers.DateField(required=False, allow_null=True, format="%Y-%m-%d")
     age = serializers.IntegerField(min_value=13, max_value=120, required=False, allow_null=True)
     gender = serializers.ChoiceField(choices=Gender.choices, required=False, allow_null=True)
     genderDescription = serializers.CharField(max_length=120, required=False, allow_blank=True, allow_null=True)  # noqa: N815
@@ -288,6 +309,16 @@ class CreatorProfileInput(StrictSerializer):
                     data["genderDescription"] = data["gender_description"]
                 del data["gender_description"]
 
+            if "response_time_hours" in data:
+                if "responseTimeHours" not in data:
+                    data["responseTimeHours"] = data["response_time_hours"]
+                del data["response_time_hours"]
+
+            if "date_of_birth" in data:
+                if "dob" not in data:
+                    data["dob"] = data["date_of_birth"]
+                del data["date_of_birth"]
+
             if "categories" in data and isinstance(data["categories"], str):
                 try:
                     parsed = json.loads(data["categories"])
@@ -310,6 +341,11 @@ class CreatorProfileInput(StrictSerializer):
                 msg = f"primaryPlatform '{primary_platform}' must match one of the socialAccounts platforms."
                 raise serializers.ValidationError({"primaryPlatform": msg})
         return attrs
+
+    def validate_dob(self, value: date | None) -> date | None:
+        if value is not None and value > date.today():
+            raise serializers.ValidationError("Date of birth cannot be in the future.")
+        return value
 
     def validate_profilePicture(self, value: Any) -> Any:  # noqa: N802
         if value and hasattr(value, "size") and value.size > MAX_PROFILE_PICTURE_SIZE_BYTES:
