@@ -3,6 +3,7 @@ from .base import REST_FRAMEWORK
 
 DEBUG = False
 OTP_DELIVERY = "console"
+EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 DEV_ENDPOINTS_ENABLED = False
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
