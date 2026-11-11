@@ -189,7 +189,7 @@ OTP_DELIVERY = env("OTP_DELIVERY", default="live")  # "live" | "console" (consol
 OTP_TTL_SECONDS = 300
 OTP_MAX_ATTEMPTS = 5
 OTP_MAX_PER_DESTINATION_PER_HOUR = 5
-TWO_FACTOR_API_KEY = env("TWO_FACTOR_API_KEY", default="")
+TWO_FACTOR_API_KEY = env("TWO_FACTOR_API_KEY", default="").strip().strip("\"'")
 RESEND_API_KEY = env("RESEND_API_KEY", default="")
 RESEND_FROM_EMAIL = env("RESEND_FROM_EMAIL", default="")
 

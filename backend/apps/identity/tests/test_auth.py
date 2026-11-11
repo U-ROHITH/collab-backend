@@ -400,3 +400,50 @@ def test_password_login_failures(anon: APIClient) -> None:
     )
     assert r_deactivated.status_code == 403
     assert r_deactivated.json()["error"]["code"] == "ACCOUNT_DEACTIVATED"
+
+
+def test_sms_provider_console_mode_fallback(settings: Any, capsys: Any) -> None:
+    settings.DEBUG = True
+    settings.OTP_DELIVERY = "console"
+    settings.TWO_FACTOR_API_KEY = ""
+
+    providers.send_sms_otp("+919876543210", "123456")
+    captured = capsys.readouterr().out
+    assert "[DEV OTP] SMS to +919876543210: 123456" in captured
+
+
+def test_sms_provider_debug_fallback_when_no_api_key(settings: Any, capsys: Any) -> None:
+    settings.DEBUG = True
+    settings.OTP_DELIVERY = "live"
+    settings.TWO_FACTOR_API_KEY = ""
+
+    # Should fallback to console because DEBUG is True and no API key is provided
+    providers.send_sms_otp("+919876543210", "654321")
+    captured = capsys.readouterr().out
+    assert "[DEV OTP] SMS to +919876543210: 654321" in captured
+
+
+def test_sms_provider_missing_key_in_production_raises_delivery_error(settings: Any) -> None:
+    settings.DEBUG = False
+    settings.OTP_DELIVERY = "live"
+    settings.TWO_FACTOR_API_KEY = ""
+
+    with pytest.raises(providers.DeliveryError):
+        providers.send_sms_otp("+919876543210", "123456")
+
+
+def test_mobile_user_provisioning_satisfies_constraints() -> None:
+    from apps.identity.models import OtpChannel
+    from apps.identity.services import _get_or_create_user
+
+    phone = "+919876540099"
+    user = _get_or_create_user(OtpChannel.SMS, phone)
+    assert user.phone == phone
+    assert user.email is None
+    assert user.role is None
+    assert user.status == UserStatus.ACTIVE
+    assert user.is_active is True
+
+    # User can be retrieved without duplicate creation
+    same_user = _get_or_create_user(OtpChannel.SMS, phone)
+    assert same_user.id == user.id

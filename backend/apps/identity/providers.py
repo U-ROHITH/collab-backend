@@ -19,8 +19,14 @@ class DeliveryError(Exception):
 
 def send_sms_otp(phone_e164: str, code: str) -> None:
     if _console_mode():
-        logger.warning("[DEV OTP] sms to %s: %s", phone_e164, code)
+        msg = f"[DEV OTP] SMS to {phone_e164}: {code}"
+        logger.warning(msg)
+        banner = f"\n========================================\n{msg}\n========================================\n"
+        print(banner, flush=True)
         return
+    if not settings.TWO_FACTOR_API_KEY:
+        logger.error("TWO_FACTOR_API_KEY is not configured. Cannot deliver live SMS.")
+        raise DeliveryError
     digits = phone_e164.lstrip("+")
     url = f"https://2factor.in/API/V1/{settings.TWO_FACTOR_API_KEY}/SMS/{digits}/{code}"
     try:
@@ -30,13 +36,17 @@ def send_sms_otp(phone_e164: str, code: str) -> None:
         logger.error("SMS OTP delivery failed: %s", type(exc).__name__)
         raise DeliveryError from None
     if not ok:
-        logger.error("SMS OTP provider rejected request (status %s)", resp.status_code)
+        err_detail = resp.text[:200] if resp else ""
+        logger.error("SMS OTP provider rejected request (status %s: %s)", resp.status_code, err_detail)
         raise DeliveryError
 
 
 def send_email_otp(email: str, code: str) -> None:
     if _console_mode():
-        logger.warning("[DEV OTP] email to %s: %s", email, code)
+        msg = f"[DEV OTP] Email to {email}: {code}"
+        logger.warning(msg)
+        banner = f"\n========================================\n{msg}\n========================================\n"
+        print(banner, flush=True)
         return
     subject = "Your Collab login code"
     text = f"Your login code is {code}. It expires in 5 minutes. If you didn't request it, ignore this email."
@@ -63,5 +73,10 @@ def send_email_otp(email: str, code: str) -> None:
 
 
 def _console_mode() -> bool:
-    # Console delivery is a dev convenience and is refused unless DEBUG (or tests) — see settings.
-    return settings.OTP_DELIVERY == "console"
+    # Console delivery is active when requested via OTP_DELIVERY=console,
+    # or as a development fallback when DEBUG=True and no TWO_FACTOR_API_KEY is configured.
+    if settings.OTP_DELIVERY == "console":
+        return True
+    if settings.DEBUG and not getattr(settings, "TWO_FACTOR_API_KEY", ""):
+        return True
+    return False
