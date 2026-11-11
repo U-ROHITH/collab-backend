@@ -1,9 +1,11 @@
 import hashlib
 import hmac
+import logging
 import re
 import secrets
 from dataclasses import dataclass
 from datetime import timedelta
+from typing import Any
 from uuid import UUID
 
 from django.conf import settings
@@ -15,6 +17,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from apps.core.exceptions import Conflict, DomainError, Forbidden, TooManyRequests
 from apps.identity import providers
 from apps.identity.models import AuditLog, OtpChallenge, OtpChannel, Role, User, UserStatus
+
+logger = logging.getLogger(__name__)
 
 _INDIAN_MOBILE = re.compile(r"^(?:\+?91)?([6-9]\d{9})$")
 
@@ -35,6 +39,18 @@ class AuthInvalid(DomainError):
     status_code = 401
     code = "AUTH_INVALID"
     message = "Invalid email/phone or password."
+
+
+class GoogleTokenInvalid(DomainError):
+    status_code = 400
+    code = "GOOGLE_TOKEN_INVALID"
+    message = "Google sign-in didn't go through. Please try again."
+
+
+class GoogleEmailUnverified(DomainError):
+    status_code = 400
+    code = "GOOGLE_EMAIL_UNVERIFIED"
+    message = "Your Google account's email isn't verified yet. Verify it with Google, or sign in with a code."
 
 
 def normalize_destination(channel: str, raw: str) -> str:
@@ -221,6 +237,65 @@ def login_with_password(*, identifier: str, password: str) -> AuthResult:
         entity_type="user",
         entity_id=str(user.pk),
         metadata={"identifier": identifier},
+    )
+    return issue_tokens(user)
+
+
+def verify_google_id_token(token: str) -> dict[str, Any]:
+    from google.auth.transport import requests as google_requests
+    from google.oauth2 import id_token
+
+    audience = settings.GOOGLE_OAUTH_CLIENT_ID or None
+    try:
+        req = google_requests.Request()
+        idinfo = id_token.verify_oauth2_token(token, req, audience=audience)
+    except Exception as exc:
+        logger.warning("Google ID token verification failed: %s", exc)
+        raise GoogleTokenInvalid() from None
+
+    email = idinfo.get("email")
+    if not email:
+        raise GoogleTokenInvalid("Google token does not contain an email address.")
+
+    if not idinfo.get("email_verified", False):
+        raise GoogleEmailUnverified()
+
+    return idinfo
+
+
+def authenticate_with_google(*, token: str, role: str | None = None) -> AuthResult:
+    payload = verify_google_id_token(token)
+    email = payload["email"].lower().strip()
+    full_name = payload.get("name", "").strip()
+
+    user = User.objects.filter(email__iexact=email).first()
+    if user:
+        if not user.email_verified:
+            user.email_verified = True
+            user.save(update_fields=["email_verified", "updated_at"])
+    else:
+        try:
+            with transaction.atomic():
+                user = User.objects.create_user(
+                    email=email,
+                    full_name=full_name,
+                    email_verified=True,
+                )
+        except IntegrityError:
+            user = User.objects.get(email__iexact=email)
+
+    if user.status == UserStatus.SUSPENDED:
+        raise Forbidden("Your account has been suspended.", code="ACCOUNT_SUSPENDED")
+
+    if user.status == UserStatus.DEACTIVATED or not user.is_active:
+        raise Forbidden("Your account has been deactivated.", code="ACCOUNT_DEACTIVATED")
+
+    AuditLog.objects.create(
+        actor=user,
+        action="user.login_google",
+        entity_type="user",
+        entity_id=str(user.pk),
+        metadata={"email": email},
     )
     return issue_tokens(user)
 

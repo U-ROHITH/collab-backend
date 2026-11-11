@@ -22,6 +22,7 @@ from apps.identity.serializers import (
     EmailVerificationRequestOutput,
     EmailVerificationVerifyInput,
     EmailVerificationVerifyOutput,
+    GoogleAuthInput,
     LoginInput,
     MeOutput,
     MeUpdateInput,
@@ -85,6 +86,24 @@ class LoginView(APIView):
         result = services.login_with_password(
             identifier=data.validated_data["identifier"],
             password=data.validated_data["password"],
+        )
+        return Response(
+            AuthTokensOutput({"access": result.access, "refresh": result.refresh, "user": result.user}).data
+        )
+
+
+class GoogleAuthView(APIView):
+    authentication_classes: list = []
+    permission_classes = [AllowAny]
+    throttle_scope = "otp_verify"
+
+    @extend_schema(request=GoogleAuthInput, responses=AuthTokensOutput)
+    def post(self, request: Request) -> Response:
+        data = GoogleAuthInput(data=request.data)
+        data.is_valid(raise_exception=True)
+        result = services.authenticate_with_google(
+            token=data.validated_data["idToken"],
+            role=data.validated_data.get("role"),
         )
         return Response(
             AuthTokensOutput({"access": result.access, "refresh": result.refresh, "user": result.user}).data

@@ -31,6 +31,18 @@ class LoginInput(StrictSerializer):
     password = serializers.CharField(max_length=128, write_only=True)
 
 
+class GoogleAuthInput(StrictSerializer):
+    idToken = serializers.CharField()  # noqa: N815
+    role = serializers.ChoiceField(choices=[Role.BRAND, Role.CREATOR], required=False, allow_null=True)
+
+    def to_internal_value(self, data: Any) -> Any:
+        if isinstance(data, dict):
+            data = dict(data)
+            if "id_token" in data and "idToken" not in data:
+                data["idToken"] = data.pop("id_token")
+        return super().to_internal_value(data)
+
+
 class MeOutput(serializers.ModelSerializer):
     fullName = serializers.CharField(source="full_name")  # noqa: N815
     emailVerified = serializers.BooleanField(source="email_verified")  # noqa: N815

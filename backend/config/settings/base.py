@@ -204,6 +204,10 @@ DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="")
 # Fail fast: some hosts (e.g. Render free) block outbound SMTP, which would otherwise hang the request.
 EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=10)
 
+# --- Social OAuth ---------------------------------------------------------------------------
+GOOGLE_OAUTH_CLIENT_ID = env("GOOGLE_OAUTH_CLIENT_ID", default="")
+GOOGLE_OAUTH_CLIENT_SECRET = env("GOOGLE_OAUTH_CLIENT_SECRET", default="")
+
 # --- Money (pending CA sign-off; see docs/04) -------------------------------------------------
 FEE_CONFIG = {
     "version": env("FEE_CONFIG_VERSION", default="2026-11-v0"),
