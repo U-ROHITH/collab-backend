@@ -1,3 +1,7 @@
+from typing import Any
+
+from django.contrib.auth.password_validation import get_password_validators, validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from apps.core.serializers import StrictSerializer
@@ -54,11 +58,65 @@ class AuthTokensOutput(serializers.Serializer):
     user = MeOutput()
 
 
+# App users' password rules (8+ characters, per the API reference). The stricter AUTH_PASSWORD_VALIDATORS
+# setting (12+) stays for Django admin accounts.
+_APP_PASSWORD_VALIDATORS = get_password_validators(
+    [
+        {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+        {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 8}},
+        {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+        {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+    ]
+)
+
+
+def check_new_password(attrs: dict[str, Any], user: User | None, *, required: bool) -> None:
+    """Validate password + confirmPassword. Errors are keyed by field so the form can show them in place."""
+    password = attrs.get("password")
+    confirm = attrs.get("confirmPassword")
+    if not password and not confirm and not required:
+        return
+    if not password:
+        raise serializers.ValidationError({"password": ["Enter a password."]})
+    if not confirm:
+        raise serializers.ValidationError({"confirmPassword": ["Confirm your password."]})
+    try:
+        validate_password(password, user=user, password_validators=_APP_PASSWORD_VALIDATORS)
+    except DjangoValidationError as exc:
+        raise serializers.ValidationError({"password": list(exc.messages)}) from None
+    if password != confirm:
+        raise serializers.ValidationError({"confirmPassword": ["Passwords don't match."]})
+
+
 class SignupCompleteInput(StrictSerializer):
     role = serializers.ChoiceField(choices=[Role.BRAND, Role.CREATOR])
     fullName = serializers.CharField(max_length=120)  # noqa: N815
     brandName = serializers.CharField(max_length=120, required=False, allow_blank=True)  # noqa: N815
     displayName = serializers.CharField(max_length=80, required=False, allow_blank=True)  # noqa: N815
+    password = serializers.CharField(max_length=128, required=False, write_only=True, trim_whitespace=False)
+    confirmPassword = serializers.CharField(  # noqa: N815
+        max_length=128, required=False, write_only=True, trim_whitespace=False
+    )
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        check_new_password(attrs, self.context.get("user"), required=False)
+        return attrs
+
+
+class LoginInput(StrictSerializer):
+    identifier = serializers.CharField(max_length=254, help_text="Email address or mobile number.")
+    password = serializers.CharField(max_length=128, write_only=True, trim_whitespace=False)
+
+
+class PasswordResetInput(StrictSerializer):
+    challengeId = serializers.UUIDField()  # noqa: N815
+    code = serializers.RegexField(r"^\d{6}$")
+    password = serializers.CharField(max_length=128, write_only=True, trim_whitespace=False)
+    confirmPassword = serializers.CharField(max_length=128, write_only=True, trim_whitespace=False)  # noqa: N815
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        check_new_password(attrs, None, required=True)
+        return attrs
 
 
 class RefreshInput(StrictSerializer):

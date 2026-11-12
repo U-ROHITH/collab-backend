@@ -5,6 +5,11 @@ Live base URL: **https://collab-api-ewju.onrender.com**
 Interactive docs: run the server and open **`/v1/docs/`** (Swagger, dev only). Raw schema: `/v1/schema/`.
 React apps should generate types from the schema: `npx openapi-typescript http://localhost:8000/v1/schema/ -o src/api/schema.ts`.
 
+## Changes on 2026-11-12 (passwords)
+- **Password sign-in:** `POST /v1/auth/login/` `{identifier, password}` → `{access, refresh, user}`. `identifier` is an email (any casing) or a mobile number (`9876543210`, `+91 98765 43210`, `098765-43210`). A wrong password, an unknown account, an account that never set a password, and a suspended account all return the same `401 AUTH_INVALID`. After 10 wrong attempts on one identifier it returns `429 RATE_LIMITED` for 15 minutes; suggest signing in with a code.
+- **Password at signup:** `/v1/auth/signup/complete/` accepts optional `password` + `confirmPassword`. Rules: 8+ characters, not all digits, not a common password, not too close to the name/email. Errors come back as `400 VALIDATION_ERROR` with `error.details.password` or `error.details.confirmPassword` (lists of messages) so the form can show them under the field. Signup without a password still works; that account signs in with a code or Google.
+- **Forgot / change password:** there's no emailed reset link. Request a code with `/v1/auth/otp/request/` as usual, then `POST /v1/auth/password/reset/` `{challengeId, code, password, confirmPassword}` → `{access, refresh, user}`. Same password rules and error shape as signup; a bad code is `400 OTP_INVALID` (password errors are checked first, so a typo doesn't burn the code). This also lets a code-only account add a password, and it clears a password lockout. **Every other session is signed out (their access tokens lapse within 15 minutes); store the returned tokens.** A signed-in token alone can't change the password, so a leaked token can't lock the owner out.
+
 ## Changes on 2026-11-09 (launch requests)
 - **Guest view:** `GET /v1/creators/`, `GET /v1/creators/{id}/` and `GET /v1/campaigns/` work without a token. Creator cards never include contact, payout or approval details. Guests (and users mid-signup or awaiting creator approval) get open campaigns with `brief: null` and `usageRights: null`. Campaign detail, bids and every write still need a signed-in user.
 - **Google sign-in:** `POST /v1/auth/google/` `{idToken, role?}` → `{access, refresh, user}`, the same shape as OTP verify. `idToken` is the Google Identity Services credential for client `1042168589486-k7e30v1tao2ooepsb5lp339m7anlvq44.apps.googleusercontent.com`. Accounts match on the Google-verified email, so an existing OTP account signs in to the same account. `role` (`brand`/`creator`) only applies to an account with no role yet; otherwise read `user.role`. Errors: `401 GOOGLE_TOKEN_INVALID`, `401 GOOGLE_EMAIL_UNVERIFIED`.
@@ -33,11 +38,13 @@ React apps should generate types from the schema: `npx openapi-typescript http:/
 | POST | `/v1/auth/otp/request/` | anyone | `{channel: "sms"\|"email", destination}` → `{challengeId, expiresIn}`. 5/min per IP, 5/hour per destination |
 | POST | `/v1/auth/otp/verify/` | anyone | `{challengeId, code}` → `{access, refresh, user}`. 5 attempts per code; single use |
 | POST | `/v1/auth/google/` | anyone | `{idToken, role?}` → `{access, refresh, user}`. `role` only used on first sign-in |
+| POST | `/v1/auth/login/` | anyone | `{identifier, password}` → `{access, refresh, user}`. 10/min per IP; 10 wrong passwords per identifier locks it for 15 min |
+| POST | `/v1/auth/password/reset/` | anyone | `{challengeId, code, password, confirmPassword}` → `{access, refresh, user}`. Code from `/otp/request/`; signs out other sessions |
 | POST | `/v1/auth/token/refresh/` | anyone | `{refresh}` → `{access, refresh}` (rotates; the old token is blacklisted) |
 | POST | `/v1/auth/logout/` | user | `{refresh}` → 204 |
 | POST | `/v1/auth/logout-all/` | user | revokes every refresh token |
 | GET | `/v1/auth/me/` | user | includes `needsOnboarding`, `profileId`, `kycStatus` |
-| POST | `/v1/auth/signup/complete/` | user | `{role: "brand"\|"creator", fullName, brandName?, displayName?}`, once only. `admin` is impossible here |
+| POST | `/v1/auth/signup/complete/` | user | `{role: "brand"\|"creator", fullName, brandName?, displayName?, password?, confirmPassword?}`, once only. `admin` is impossible here |
 
 ## Creators
 | Method | Path | Who |

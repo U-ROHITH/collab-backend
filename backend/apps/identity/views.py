@@ -15,10 +15,12 @@ from apps.identity import services
 from apps.identity.serializers import (
     AuthTokensOutput,
     GoogleSignInInput,
+    LoginInput,
     MeOutput,
     OtpRequestInput,
     OtpRequestOutput,
     OtpVerifyInput,
+    PasswordResetInput,
     RefreshInput,
     SignupCompleteInput,
 )
@@ -79,6 +81,44 @@ class GoogleSignInView(APIView):
         )
 
 
+class LoginView(APIView):
+    """POST {identifier, password} -> {access, refresh, user}. `identifier` is an email or mobile number."""
+
+    authentication_classes: list = []
+    permission_classes = [AllowAny]
+    throttle_scope = "login"
+
+    @extend_schema(request=LoginInput, responses=AuthTokensOutput)
+    def post(self, request: Request) -> Response:
+        data = LoginInput(data=request.data)
+        data.is_valid(raise_exception=True)
+        result = services.login_with_password(**data.validated_data)
+        return Response(
+            AuthTokensOutput({"access": result.access, "refresh": result.refresh, "user": result.user}).data
+        )
+
+
+class PasswordResetView(APIView):
+    """POST {challengeId, code, password, confirmPassword} -> {access, refresh, user}.
+
+    Forgot password: get a code from /otp/request/ first. Signs out every other session.
+    """
+
+    authentication_classes: list = []
+    permission_classes = [AllowAny]
+    throttle_scope = "otp_verify"
+
+    @extend_schema(request=PasswordResetInput, responses=AuthTokensOutput)
+    def post(self, request: Request) -> Response:
+        data = PasswordResetInput(data=request.data)
+        data.is_valid(raise_exception=True)
+        v = data.validated_data
+        result = services.reset_password(challenge_id=v["challengeId"], code=v["code"], password=v["password"])
+        return Response(
+            AuthTokensOutput({"access": result.access, "refresh": result.refresh, "user": result.user}).data
+        )
+
+
 class TokenRefreshEnvelopeView(TokenRefreshView):
     """POST {refresh} -> {access, refresh}. Refresh tokens rotate; the old one is blacklisted."""
 
@@ -120,7 +160,7 @@ class MeView(APIView):
 class SignupCompleteView(APIView):
     @extend_schema(request=SignupCompleteInput, responses=MeOutput)
     def post(self, request: Request) -> Response:
-        data = SignupCompleteInput(data=request.data)
+        data = SignupCompleteInput(data=request.data, context={"user": request.user})
         data.is_valid(raise_exception=True)
         v = data.validated_data
         user = services.complete_signup(
@@ -129,5 +169,6 @@ class SignupCompleteView(APIView):
             full_name=v["fullName"],
             brand_name=v.get("brandName", ""),
             display_name=v.get("displayName", ""),
+            password=v.get("password") or None,
         )
         return Response(MeOutput(user).data, status=status.HTTP_201_CREATED)

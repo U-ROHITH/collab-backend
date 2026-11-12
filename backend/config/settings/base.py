@@ -164,6 +164,7 @@ REST_FRAMEWORK = {
         "user": "120/min",
         "otp_request": "5/min",
         "otp_verify": "10/min",
+        "login": "10/min",
         "bids": "30/hour",
         "offers": "50/day",
         "writes": "60/min",

@@ -8,13 +8,16 @@ from datetime import timedelta
 from uuid import UUID
 
 from django.conf import settings
+from django.contrib.auth.hashers import make_password
+from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.utils import timezone
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.core.exceptions import Conflict, DomainError, TooManyRequests
 from apps.identity import google, providers
-from apps.identity.models import AuditLog, OtpChallenge, OtpChannel, Role, User
+from apps.identity.models import AuditLog, OtpChallenge, OtpChannel, Role, User, UserStatus
 
 logger = logging.getLogger(__name__)
 _INDIAN_MOBILE = re.compile(r"^(?:\+?91)?([6-9]\d{9})$")
@@ -30,6 +33,12 @@ class OtpDeliveryFailed(DomainError):
     status_code = 503
     code = "OTP_DELIVERY_FAILED"
     message = "We couldn't send the code right now. Please try again."
+
+
+class AuthInvalid(DomainError):
+    status_code = 401
+    code = "AUTH_INVALID"
+    message = "Incorrect email/phone or password."
 
 
 def normalize_destination(channel: str, raw: str) -> str:
@@ -97,6 +106,15 @@ class AuthResult:
 
 
 def verify_otp(*, challenge_id: UUID, code: str) -> AuthResult:
+    challenge = _consume_challenge(challenge_id=challenge_id, code=code)
+    user = _get_or_create_user(challenge.channel, challenge.destination)
+    if not user.is_active:
+        raise OtpInvalid()
+    return issue_tokens(user)
+
+
+def _consume_challenge(*, challenge_id: UUID, code: str) -> OtpChallenge:
+    """Check a code and mark it used. Raises OtpInvalid."""
     # Attempt counting must commit even when the code is wrong, so the check happens
     # in its own transaction and the error is raised after commit.
     with transaction.atomic():
@@ -113,11 +131,7 @@ def verify_otp(*, challenge_id: UUID, code: str) -> AuthResult:
             challenge.save(update_fields=["attempts", "consumed_at", "updated_at"])
     if not ok:
         raise OtpInvalid()
-
-    user = _get_or_create_user(challenge.channel, challenge.destination)
-    if not user.is_active:
-        raise OtpInvalid()
-    return issue_tokens(user)
+    return challenge
 
 
 class GoogleSignInFailed(DomainError):
@@ -169,7 +183,98 @@ def issue_tokens(user: User) -> AuthResult:
     return AuthResult(user=user, access=str(refresh.access_token), refresh=str(refresh))
 
 
-def complete_signup(*, user: User, role: str, full_name: str, brand_name: str = "", display_name: str = "") -> User:
+# --- Password sign-in ------------------------------------------------------------------------------
+# Per-account cap on wrong passwords, on top of the per-IP throttle, so a spread-out attack on one
+# account still stops. Counts by the identifier as typed (normalized), so unknown accounts are capped too.
+LOGIN_MAX_FAILURES = 10
+LOGIN_FAILURE_WINDOW_SECONDS = 15 * 60
+
+
+def _login_fail_key(normalized_identifier: str) -> str:
+    return f"pwlogin:fail:{hashlib.sha256(normalized_identifier.encode()).hexdigest()}"
+
+
+def _bump(key: str) -> int:
+    if cache.add(key, 1, LOGIN_FAILURE_WINDOW_SECONDS):
+        return 1
+    try:
+        return cache.incr(key)
+    except ValueError:  # expired between add and incr
+        cache.set(key, 1, LOGIN_FAILURE_WINDOW_SECONDS)
+        return 1
+
+
+def _find_user_for_login(identifier: str) -> tuple[str, User | None]:
+    """Return (normalized identifier, user). Emails match case-insensitively; phones in any common format."""
+    ident = identifier.strip()
+    if "@" in ident:
+        key = ident.lower()
+        return key, User.objects.filter(email__iexact=key).first()
+    digits = re.sub(r"[\s\-()]", "", ident)
+    if len(digits) == 11 and digits.startswith("0"):  # trunk prefix: 098765 43210
+        digits = digits[1:]
+    m = _INDIAN_MOBILE.match(digits)
+    if not m:
+        return digits, None
+    phone = f"+91{m.group(1)}"
+    return phone, User.objects.filter(phone=phone).first()
+
+
+def login_with_password(*, identifier: str, password: str) -> AuthResult:
+    key, user = _find_user_for_login(identifier)
+    fail_key = _login_fail_key(key)
+    # Count the attempt before checking, so parallel guesses can't all slip in under the limit.
+    if _bump(fail_key) > LOGIN_MAX_FAILURES:
+        raise TooManyRequests("Too many sign-in attempts. Try again in 15 minutes, or sign in with a code.")
+
+    if user is None or not user.has_usable_password():
+        make_password(password)  # same hashing cost as a real check, so timing doesn't reveal the account
+        raise AuthInvalid()
+    if not (user.check_password(password) and user.status == UserStatus.ACTIVE):
+        raise AuthInvalid()
+
+    cache.delete(fail_key)
+    AuditLog.objects.create(
+        actor=user, action="user.login_password", entity_type="user", entity_id=str(user.pk), metadata={}
+    )
+    return issue_tokens(user)
+
+
+def reset_password(*, challenge_id: UUID, code: str, password: str) -> AuthResult:
+    """Forgot password: prove control of the email/phone with a fresh code, then set a new password.
+
+    Requiring a code each time means a stolen access token can't be turned into a permanent takeover.
+    Every existing session is signed out (refresh tokens revoked; access tokens already issued still work
+    until they expire, at most 15 minutes). The caller gets fresh tokens.
+    """
+    challenge = _consume_challenge(challenge_id=challenge_id, code=code)
+    user = _get_or_create_user(challenge.channel, challenge.destination)
+    if not user.is_active:
+        raise OtpInvalid()
+    with transaction.atomic():
+        locked = User.objects.select_for_update().get(pk=user.pk)
+        locked.set_password(password)
+        locked.save(update_fields=["password", "updated_at"])
+        BlacklistedToken.objects.bulk_create(
+            [BlacklistedToken(token=t) for t in OutstandingToken.objects.filter(user=locked)],
+            ignore_conflicts=True,
+        )
+        AuditLog.objects.create(
+            actor=locked, action="user.password_reset", entity_type="user", entity_id=str(locked.pk), metadata={}
+        )
+    cache.delete(_login_fail_key(challenge.destination))
+    return issue_tokens(locked)
+
+
+def complete_signup(
+    *,
+    user: User,
+    role: str,
+    full_name: str,
+    brand_name: str = "",
+    display_name: str = "",
+    password: str | None = None,
+) -> User:
     """Set role exactly once and create the matching profile. `admin` is never allowed here."""
     from apps.brands.services import create_brand_for_user
     from apps.creators.services import create_creator_for_user
@@ -182,7 +287,11 @@ def complete_signup(*, user: User, role: str, full_name: str, brand_name: str = 
             raise Conflict("Signup is already complete.", code="SIGNUP_ALREADY_COMPLETE")
         locked.role = role
         locked.full_name = full_name
-        locked.save(update_fields=["role", "full_name", "updated_at"])
+        fields = ["role", "full_name", "updated_at"]
+        if password:
+            locked.set_password(password)
+            fields.append("password")
+        locked.save(update_fields=fields)
         if role == Role.BRAND:
             create_brand_for_user(user=locked, name=brand_name or full_name)
         else:
@@ -192,7 +301,7 @@ def complete_signup(*, user: User, role: str, full_name: str, brand_name: str = 
             action="signup.completed",
             entity_type="user",
             entity_id=str(locked.pk),
-            metadata={"role": role},
+            metadata={"role": role, "passwordSet": bool(password)},
         )
     return locked
 
