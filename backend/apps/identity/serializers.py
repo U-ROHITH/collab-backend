@@ -33,10 +33,26 @@ class MeOutput(serializers.ModelSerializer):
     needsOnboarding = serializers.SerializerMethodField()  # noqa: N815
     profileId = serializers.SerializerMethodField()  # noqa: N815
     kycStatus = serializers.SerializerMethodField()  # noqa: N815
+    hasPassword = serializers.SerializerMethodField()  # noqa: N815
 
     class Meta:
         model = User
-        fields = ("id", "email", "phone", "fullName", "role", "status", "needsOnboarding", "profileId", "kycStatus")
+        fields = (
+            "id",
+            "email",
+            "phone",
+            "fullName",
+            "role",
+            "status",
+            "needsOnboarding",
+            "profileId",
+            "kycStatus",
+            "hasPassword",
+        )
+
+    def get_hasPassword(self, obj: User) -> bool:  # noqa: N802
+        """False for accounts created with a code or Google that never set a password."""
+        return obj.has_usable_password()
 
     def get_kycStatus(self, obj: User) -> str:  # noqa: N802
         """not_started | in_progress | pending | verified | rejected"""
@@ -131,3 +147,15 @@ class GoogleSignInInput(StrictSerializer):
         allow_null=True,
         help_text="Used only when the account has no role yet (first sign-in).",
     )
+
+
+class PasswordChangeInput(StrictSerializer):
+    currentPassword = serializers.CharField(  # noqa: N815
+        max_length=128, required=False, write_only=True, trim_whitespace=False
+    )
+    password = serializers.CharField(max_length=128, write_only=True, trim_whitespace=False)
+    confirmPassword = serializers.CharField(max_length=128, write_only=True, trim_whitespace=False)  # noqa: N815
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        check_new_password(attrs, self.context.get("user"), required=True)
+        return attrs

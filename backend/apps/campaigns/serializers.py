@@ -2,7 +2,7 @@ from typing import Any
 
 from rest_framework import serializers
 
-from apps.campaigns.models import Bid, Campaign, CampaignStatus
+from apps.campaigns.models import Bid, BidStatus, Campaign, CampaignStatus
 from apps.core.dates import EndOfDayDateField, LocalDateField
 from apps.core.parties import creator_public
 from apps.core.serializers import MoneyField, StrictSerializer, UsageRightsSerializer
@@ -21,6 +21,7 @@ class CampaignOutput(serializers.ModelSerializer):
     closesAt = EndOfDayDateField(source="closes_at")  # noqa: N815  "YYYY-MM-DD"
     usageRights = serializers.JSONField(source="usage_rights")  # noqa: N815
     createdAt = LocalDateField(source="created_at")  # noqa: N815  "YYYY-MM-DD"
+    bidCount = serializers.SerializerMethodField()  # noqa: N815
 
     class Meta:
         model = Campaign
@@ -36,6 +37,7 @@ class CampaignOutput(serializers.ModelSerializer):
             "status",
             "usageRights",
             "brand",
+            "bidCount",
             "createdAt",
         )
 
@@ -53,11 +55,30 @@ class CampaignOutput(serializers.ModelSerializer):
             return None
         return {"id": str(obj.brand_id), "name": obj.brand.name, "logoUrl": obj.brand.logo_url}
 
+    def get_bidCount(self, obj: Campaign) -> int:  # noqa: N802
+        """Bids that weren't withdrawn. Lists annotate `bid_count`; single objects fall back to a count."""
+        count = getattr(obj, "bid_count", None)
+        if count is None:  # single-object responses (create/patch); lists are always annotated
+            count = obj.bids.exclude(status=BidStatus.WITHDRAWN).count()
+        return count
+
     def get_budgetMin(self, obj: Campaign) -> dict[str, Any] | None:  # noqa: N802
         return money(obj.budget_min_paise)
 
     def get_budgetMax(self, obj: Campaign) -> dict[str, Any] | None:  # noqa: N802
         return money(obj.budget_max_paise)
+
+
+class CampaignListQuery(StrictSerializer):
+    """Query parameters for GET /campaigns/. Anything else is rejected, so a typo can't silently do nothing."""
+
+    platform = serializers.ChoiceField(choices=Platform.choices, required=False)
+    budgetMin__gte = MoneyField(required=False, help_text="Paise; campaigns whose minimum budget is at least this")  # noqa: N815
+    budgetMax__lte = MoneyField(required=False, help_text="Paise; campaigns whose maximum budget is at most this")  # noqa: N815
+    status = serializers.ChoiceField(choices=CampaignStatus.choices, required=False, help_text="Brands only")
+    # Pagination (handled by the paginator; listed so they pass validation).
+    cursor = serializers.CharField(required=False)
+    limit = serializers.IntegerField(required=False, min_value=1, help_text="Page size; values above 50 are capped")
 
 
 class CampaignInput(StrictSerializer):
@@ -107,3 +128,17 @@ class BidInput(StrictSerializer):
     message = serializers.CharField(max_length=2000)
     expectedViews = serializers.IntegerField(min_value=0, required=False, allow_null=True)  # noqa: N815
     deliveryDays = serializers.IntegerField(min_value=1, max_value=90)  # noqa: N815
+
+
+class MyBidOutput(BidOutput):
+    """A creator's own bid with the campaign it's on (GET /creators/me/bids/)."""
+
+    campaign = serializers.SerializerMethodField()
+
+    class Meta(BidOutput.Meta):
+        fields = (*BidOutput.Meta.fields, "campaign")
+
+    def get_campaign(self, obj: Bid) -> dict[str, Any]:
+        campaign = obj.campaign
+        campaign.bid_count = getattr(obj, "campaign_bid_count", None)
+        return CampaignOutput(campaign, context=self.context).data

@@ -12,6 +12,7 @@ from django.contrib.auth.hashers import make_password
 from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.utils import timezone
+from rest_framework.exceptions import ValidationError
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -38,7 +39,9 @@ class OtpDeliveryFailed(DomainError):
 class AuthInvalid(DomainError):
     status_code = 401
     code = "AUTH_INVALID"
-    message = "Incorrect email/phone or password."
+    # One message for every failure (wrong password, unknown account, no password yet) so it can't be used
+    # to learn which numbers have accounts; the second sentence covers code-only accounts.
+    message = "Incorrect email/phone or password. If you signed up with a code, sign in with a code and set a password."
 
 
 def normalize_destination(channel: str, raw: str) -> str:
@@ -110,7 +113,7 @@ def verify_otp(*, challenge_id: UUID, code: str) -> AuthResult:
     user = _get_or_create_user(challenge.channel, challenge.destination)
     if not user.is_active:
         raise OtpInvalid()
-    return issue_tokens(user)
+    return issue_tokens(user, method="otp")
 
 
 def _consume_challenge(*, challenge_id: UUID, code: str) -> OtpChallenge:
@@ -164,7 +167,7 @@ def google_sign_in(*, id_token: str, role: str | None) -> AuthResult:
             user = complete_signup(user=user, role=role, full_name=name)
         except Conflict:  # a concurrent request finished signup first
             user = User.objects.get(pk=user.pk)
-    return issue_tokens(user)
+    return issue_tokens(user, method="google")
 
 
 def _get_or_create_user(channel: str, destination: str) -> User:
@@ -178,8 +181,22 @@ def _get_or_create_user(channel: str, destination: str) -> User:
         return User.objects.get(**lookup)
 
 
-def issue_tokens(user: User) -> AuthResult:
+# How a session was opened. Carried in every token (refresh keeps the original values), so endpoints can ask
+# "did this person prove control of their email/phone just now?" without another round trip.
+AUTH_METHODS = ("otp", "google", "password")
+
+
+def _password_version(user: User) -> str:
+    """Short fingerprint of the stored hash: changes whenever the password does. Not a secret by itself."""
+    return hashlib.sha256(user.password.encode()).hexdigest()[:12]
+
+
+def issue_tokens(user: User, *, method: str | None = None) -> AuthResult:
     refresh = RefreshToken.for_user(user)
+    if method:
+        refresh["amr"] = method
+        refresh["auth_time"] = int(timezone.now().timestamp())
+        refresh["pwv"] = _password_version(user)
     return AuthResult(user=user, access=str(refresh.access_token), refresh=str(refresh))
 
 
@@ -237,20 +254,63 @@ def login_with_password(*, identifier: str, password: str) -> AuthResult:
     AuditLog.objects.create(
         actor=user, action="user.login_password", entity_type="user", entity_id=str(user.pk), metadata={}
     )
-    return issue_tokens(user)
+    return issue_tokens(user, method="password")
+
+
+PASSWORD_CHANGE_FRESH_SECONDS = 10 * 60
+
+
+class ReauthRequired(DomainError):
+    status_code = 403
+    code = "REAUTH_REQUIRED"
+    message = "Enter your current password, or sign in with a code again to set a new one."
 
 
 def reset_password(*, challenge_id: UUID, code: str, password: str) -> AuthResult:
-    """Forgot password: prove control of the email/phone with a fresh code, then set a new password.
-
-    Requiring a code each time means a stolen access token can't be turned into a permanent takeover.
-    Every existing session is signed out (refresh tokens revoked; access tokens already issued still work
-    until they expire, at most 15 minutes). The caller gets fresh tokens.
-    """
+    """Forgot password: prove control of the email/phone with a fresh code, then set a new password."""
     challenge = _consume_challenge(challenge_id=challenge_id, code=code)
     user = _get_or_create_user(challenge.channel, challenge.destination)
     if not user.is_active:
         raise OtpInvalid()
+    _set_password_everywhere(user, password, action="user.password_reset")
+    cache.delete(_login_fail_key(challenge.destination))
+    return issue_tokens(user, method="otp")
+
+
+def change_password(
+    *,
+    user: User,
+    password: str,
+    current_password: str | None,
+    auth_method: str | None,
+    auth_time: int | None,
+    password_version: str | None,
+) -> AuthResult:
+    """Set a new password while signed in.
+
+    Allowed with the current password, or without one when the session was opened by a code or Google in the
+    last few minutes (the "forgot password -> sign in with a code -> set a new one" flow, and first-time setup
+    for code-only accounts). A token alone isn't enough, so a stolen token can't become a permanent takeover.
+    """
+    if current_password:
+        attempts_key = f"pwchange:fail:{user.pk}"
+        if _bump(attempts_key) > LOGIN_MAX_FAILURES:
+            raise TooManyRequests("Too many attempts. Try again in 15 minutes, or sign in with a code.")
+        if not user.check_password(current_password):
+            raise ValidationError({"currentPassword": ["That's not your current password."]})
+        cache.delete(attempts_key)
+    else:
+        fresh = auth_time is not None and timezone.now().timestamp() - auth_time <= PASSWORD_CHANGE_FRESH_SECONDS
+        # A token from before the last password change can't skip the current password, even if still fresh.
+        same_password = password_version == _password_version(user)
+        if not (auth_method in ("otp", "google") and fresh and same_password):
+            raise ReauthRequired()
+    _set_password_everywhere(user, password, action="user.password_changed")
+    return issue_tokens(user, method="password")
+
+
+def _set_password_everywhere(user: User, password: str, *, action: str) -> None:
+    """Set the password and revoke every refresh token. Access tokens already issued lapse within 15 minutes."""
     with transaction.atomic():
         locked = User.objects.select_for_update().get(pk=user.pk)
         locked.set_password(password)
@@ -259,11 +319,8 @@ def reset_password(*, challenge_id: UUID, code: str, password: str) -> AuthResul
             [BlacklistedToken(token=t) for t in OutstandingToken.objects.filter(user=locked)],
             ignore_conflicts=True,
         )
-        AuditLog.objects.create(
-            actor=locked, action="user.password_reset", entity_type="user", entity_id=str(locked.pk), metadata={}
-        )
-    cache.delete(_login_fail_key(challenge.destination))
-    return issue_tokens(locked)
+        AuditLog.objects.create(actor=locked, action=action, entity_type="user", entity_id=str(locked.pk), metadata={})
+    user.password = locked.password
 
 
 def complete_signup(

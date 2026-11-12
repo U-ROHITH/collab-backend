@@ -2,7 +2,8 @@ from typing import Any
 from uuid import UUID
 
 from django.db import IntegrityError, transaction
-from django.db.models import F, QuerySet
+from django.db.models import Count, F, OuterRef, Q, QuerySet, Subquery
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from apps.brands.models import Brand
@@ -57,6 +58,43 @@ def campaigns_listed_for(user: User | None) -> QuerySet[Campaign]:
     if getattr(user, "role", None) == Role.BRAND or sees_full_campaigns(user):
         return campaigns_visible_to(user)
     return public_open_campaigns()
+
+
+# --- Read helpers (one query per list: counts are annotated, never fetched per row) --------------
+def _counted_bids(prefix: str = "") -> Q:
+    """Bids shown in `bidCount`: everything except withdrawn ones."""
+    return ~Q(**{f"{prefix}status": BidStatus.WITHDRAWN})
+
+
+def with_bid_count(qs: QuerySet[Campaign]) -> QuerySet[Campaign]:
+    return qs.annotate(bid_count=Count("bids", filter=_counted_bids("bids__")))
+
+
+def filter_campaigns(qs: QuerySet[Campaign], filters: dict[str, Any]) -> QuerySet[Campaign]:
+    """Apply validated list filters (see CampaignListQuery)."""
+    if platform := filters.get("platform"):
+        qs = qs.filter(platform=platform)
+    if (min_gte := filters.get("budgetMin__gte")) is not None:
+        qs = qs.filter(budget_min_paise__gte=min_gte)
+    if (max_lte := filters.get("budgetMax__lte")) is not None:
+        qs = qs.filter(budget_max_paise__lte=max_lte)
+    return qs
+
+
+def bids_of(user: User) -> QuerySet[Bid]:
+    """A creator's own bids with their campaign, newest first, `campaign_bid_count` annotated."""
+    counts = (
+        Bid.objects.filter(_counted_bids(), campaign=OuterRef("campaign"))
+        .order_by()
+        .values("campaign")
+        .annotate(n=Count("pk"))
+        .values("n")
+    )
+    return (
+        Bid.objects.filter(creator__user=user)
+        .select_related("campaign", "creator")
+        .annotate(campaign_bid_count=Coalesce(Subquery(counts), 0))
+    )
 
 
 def _check_budget(min_p: int, max_p: int) -> None:

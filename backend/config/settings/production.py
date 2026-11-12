@@ -3,7 +3,16 @@ import re
 from django.core.exceptions import ImproperlyConfigured
 
 from .base import *  # noqa: F403
-from .base import ALLOWED_HOSTS, CORS_ALLOWED_ORIGINS, OTP_DELIVERY, OTP_TEST_ACCOUNTS, OTP_TEST_CODE, SECRET_KEY, env
+from .base import (
+    ALLOWED_HOSTS,
+    CORS_ALLOWED_ORIGINS,
+    DATABASES,
+    OTP_DELIVERY,
+    OTP_TEST_ACCOUNTS,
+    OTP_TEST_CODE,
+    SECRET_KEY,
+    env,
+)
 
 DEBUG = False
 DEV_ENDPOINTS_ENABLED = False
@@ -30,6 +39,17 @@ for required in (
 ):
     if not env(required, default=""):
         raise ImproperlyConfigured(f"{required} is required in production.")
+
+# Reuse database connections. With CONN_MAX_AGE=0 under ASGI every request opened a fresh TLS connection to
+# the Supabase pooler in Mumbai (~0.3 s from Singapore). A process-level pool keeps a few warm. Django already
+# disables prepared statements, which the transaction pooler requires. Size: 2 workers x 4 is well under
+# Supabase's pooler limit.
+DATABASES["default"]["OPTIONS"]["pool"] = {
+    "min_size": 1,
+    "max_size": env.int("DB_POOL_MAX_SIZE", default=4),
+    "timeout": 10,
+    "max_idle": 300,
+}
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_SSL_REDIRECT = True

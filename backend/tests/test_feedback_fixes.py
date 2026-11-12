@@ -31,7 +31,13 @@ def test_creator_does_not_see_brand_on_campaigns(brand: Any, creator: Any, campa
     assert c["brand"]["name"] == "Nimbu Foods"  # the owner still sees it
     assert ok(creator.get("/v1/campaigns/"))[0]["brand"] is None
     assert ok(creator.get(f"/v1/campaigns/{c['id']}/"))["brand"] is None
-    assert ok(creator.get("/v1/creators/me/campaigns/"))[0]["brand"] is None
+    ok(
+        creator.post(
+            f"/v1/campaigns/{c['id']}/bids/", {"price": 300_000, "message": "hi", "deliveryDays": 3}, format="json"
+        ),
+        201,
+    )
+    assert ok(creator.get("/v1/creators/me/bids/"))[0]["campaign"]["brand"] is None  # still hidden after bidding
 
 
 def test_bid_alone_does_not_reveal_brand_profile(brand: Any, creator: Any, campaign_payload: dict) -> None:

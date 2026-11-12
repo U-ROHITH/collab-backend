@@ -1,0 +1,28 @@
+"""Error pages: JSON envelope for the API, Django's HTML only for the admin."""
+
+import json
+
+from django.conf import settings
+from django.http import Http404
+from django.test import RequestFactory
+
+from apps.core.views import not_found, server_error
+
+rf = RequestFactory()
+
+
+def test_server_error_is_json_for_api_paths() -> None:
+    resp = server_error(rf.get("/v1/campaigns/"))
+    body = json.loads(resp.content)
+    assert resp.status_code == 500 and body["error"]["code"] == "INTERNAL_ERROR" and body["success"] is False
+
+
+def test_admin_keeps_html_error_pages() -> None:
+    admin = f"/{settings.ADMIN_URL}missing/"
+    assert not_found(rf.get(admin), Http404()).headers["Content-Type"].startswith("text/html")
+    assert server_error(rf.get(admin)).headers["Content-Type"].startswith("text/html")
+
+
+def test_not_found_outside_v1_is_json_too() -> None:
+    resp = not_found(rf.get("/wp-login.php"), Http404())
+    assert resp.status_code == 404 and json.loads(resp.content)["error"]["code"] == "NOT_FOUND"

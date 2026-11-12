@@ -50,8 +50,9 @@ def test_guest_campaign_list_hides_brief(
     assert full["brief"] == campaign_payload["brief"] and full["brand"] is None
     assert brand.get("/v1/campaigns/").json()["data"][0]["brand"]["name"]
 
-    # detail, writes and bids stay signed-in only
-    assert anon.get(f"/v1/campaigns/{campaign['id']}/").status_code == 401
+    # detail is public with the same guest view (frontend issues 2026-11-12 #6); writes and bids stay signed-in only
+    detail = anon.get(f"/v1/campaigns/{campaign['id']}/").json()["data"]
+    assert detail["brief"] is None and detail["usageRights"] is None and detail["brand"] is None
     assert anon.post("/v1/campaigns/", campaign_payload, format="json").status_code == 401
     assert anon.get(f"/v1/campaigns/{campaign['id']}/bids/").status_code == 401
 

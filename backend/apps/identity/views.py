@@ -20,6 +20,7 @@ from apps.identity.serializers import (
     OtpRequestInput,
     OtpRequestOutput,
     OtpVerifyInput,
+    PasswordChangeInput,
     PasswordResetInput,
     RefreshInput,
     SignupCompleteInput,
@@ -93,6 +94,35 @@ class LoginView(APIView):
         data = LoginInput(data=request.data)
         data.is_valid(raise_exception=True)
         result = services.login_with_password(**data.validated_data)
+        return Response(
+            AuthTokensOutput({"access": result.access, "refresh": result.refresh, "user": result.user}).data
+        )
+
+
+class PasswordChangeView(APIView):
+    """POST {currentPassword?, password, confirmPassword} -> {access, refresh, user}.
+
+    `currentPassword` may be left out within 10 minutes of signing in with a code or Google; otherwise
+    403 REAUTH_REQUIRED. Signs out every other session; store the returned tokens.
+    """
+
+    permission_classes = [IsAuthenticated]
+    throttle_scope = "login"
+
+    @extend_schema(request=PasswordChangeInput, responses=AuthTokensOutput)
+    def post(self, request: Request) -> Response:
+        data = PasswordChangeInput(data=request.data, context={"user": request.user})
+        data.is_valid(raise_exception=True)
+        v = data.validated_data
+        token = request.auth
+        result = services.change_password(
+            user=request.user,
+            password=v["password"],
+            current_password=v.get("currentPassword") or None,
+            auth_method=token.get("amr") if token is not None else None,
+            auth_time=token.get("auth_time") if token is not None else None,
+            password_version=token.get("pwv") if token is not None else None,
+        )
         return Response(
             AuthTokensOutput({"access": result.access, "refresh": result.refresh, "user": result.user}).data
         )

@@ -5,6 +5,37 @@ Live base URL: **https://collab-api-ewju.onrender.com**
 Interactive docs: run the server and open **`/v1/docs/`** (Swagger, dev only). Raw schema: `/v1/schema/`.
 React apps should generate types from the schema: `npx openapi-typescript http://localhost:8000/v1/schema/ -o src/api/schema.ts`.
 
+## Changes on 2026-11-12 (frontend issues report)
+**This file is the reference for what's live.** The "API Reference v1" PDF describes an unmerged branch: `/v1/auth/email/*`, `/v1/creators/me/avatar/`, `/v1/checkout/`, `/v1/payments/verify/`, `/v1/creators/me/wallet/`, `/v1/creators/me/withdrawals/` and `/v1/reports/*` are **not live**; don't build on them. Everything in the tables below is live.
+
+- **Outage fixed (#2):** the 500s on every database-backed call were Redis refusing connections ("max number of clients reached"); the cache opened a new pool per request. Now one bounded pool per worker, and a Redis hiccup no longer fails requests. Database connections are pooled too, which removes ~0.3 s from every request.
+- **My bids (#1):** `GET /v1/creators/me/bids/` (old path `/v1/creators/me/campaigns/` now returns the same) → the signed-in creator's bids, newest first, each `{...bid, campaign: {...campaign}}`. `401 AUTH_REQUIRED` signed out, `403` for brands. `/v1/creators/me/campaigns/` no longer returns the public campaign list.
+- **Campaigns (#5, #6):** every campaign has `bidCount` (bids not withdrawn). `brand` stays `null` for creators and guests **on purpose (blind bidding)**: show something neutral like "Brand on Linkloom"; the brand is revealed on the order. `GET /v1/campaigns/{id}/` is now public for open campaigns, with the same guest view as the list (`brief`/`usageRights` `null` unless you're an approved creator).
+- **Filters (#7):** `GET /v1/campaigns/` accepts `platform`, `budgetMin__gte`, `budgetMax__lte` (paise), `status` (brands only; ignored for others), `limit`, `cursor`. Anything else, including `category` (campaigns have no category), is `400 VALIDATION_ERROR` with the parameter in `error.details`. `limit` above 50 is capped at 50.
+- **Passwords (#3):** `user.hasPassword` on `/auth/me/` and every auth response. `POST /v1/auth/password/change/` `{currentPassword?, password, confirmPassword}` → `{access, refresh, user}`: `currentPassword` may be omitted within **10 minutes** of signing in with a code or Google, otherwise `403 REAUTH_REQUIRED`; a wrong one is `400` with `error.details.currentPassword`. So "Forgot password?" = sign in with a code, then call this (or use `/password/reset/` with the code directly). A login for an account without a password returns the same `401 AUTH_INVALID` as a wrong password (on purpose, so the endpoint can't reveal which numbers have accounts); its message now says "If you signed up with a code, sign in with a code and set a password." Use `hasPassword: false` after a code sign-in to prompt for one.
+- **#4:** `otp/verify` for a number with no account returns `needsOnboarding: true, role: null, hasPassword: false` (covered by a test). If someone skipped the password step, their number already had an account.
+- **#8 field names:** messages: `text` (+ `attachmentUploadId`); the PDF's `content` is wrong. Deliverables: `contentUrl` **or** `fileUploadId` (exactly one) + `note?`. Bids: `expectedViews` is accepted (optional). Offers and `PATCH /creators/me/` as the site sends them. All request money is integer paise.
+- **#9 dates:** `closesAt`, `createdAt` on campaigns/bids and `deadline` on offers are dates (`YYYY-MM-DD`) **by design**: bidding closes at the end of that day, IST. Orders (`createdAt`, `fundedAt`, `approvedAt`) and messages (`sentAt`) are full ISO timestamps.
+- **#10:** unknown routes return the JSON envelope (`404 NOT_FOUND`). The trailing slash is optional: `/v1/campaigns` works like `/v1/campaigns/` (no redirect).
+- **#12 test logins:** on for `8688815998`, `9381946904`, `6302624130`. They take a fixed code (shared privately, not in this file), send no SMS and skip the hourly limit. Anyone with the code can sign in to, or set a password on, these accounts, so keep them throwaway. They'll be turned off before launch.
+- **#13:** Google sign-in accepts client `591280470035-mamos86blk66gpr7bufpv48ln9dntsef.apps.googleusercontent.com` (and the old one).
+- **#15:** `422 INVALID_PHONE` for a bad mobile number on `otp/request/`. WebSocket: `wss://<host>/ws/?ticket=<ticket>` (the `path` field from `POST /v1/realtime/ticket/`); a plain GET there is a 404, as expected. CORS is open for now and will be limited to the site's origins before launch.
+
+**Status values**
+| Object | Values |
+|---|---|
+| Campaign | `draft`, `open`, `closed`, `cancelled` |
+| Bid | `pending`, `selected`, `rejected`, `withdrawn` |
+| Offer | `pending`, `accepted`, `rejected`, `withdrawn`, `expired` |
+| Order | `awaiting_payment`, `funded`, `draft_submitted`, `revision_requested`, `approved`, `completed`, `cancelled`, `refund_pending`, `refunded` |
+| Dispute | `open`, `resolved` |
+| KYC | `not_started`, `in_progress`, `pending`, `verified`, `rejected` |
+| Creator approval | `pending`, `approved`, `rejected` |
+| Upload | `pending`, `ready`, `rejected` |
+| User | `active`, `suspended`, `deactivated` |
+
+Deliverables have no status of their own; the order status says where the work is.
+
 ## Changes on 2026-11-12 (passwords)
 - **Password sign-in:** `POST /v1/auth/login/` `{identifier, password}` → `{access, refresh, user}`. `identifier` is an email (any casing) or a mobile number (`9876543210`, `+91 98765 43210`, `098765-43210`). A wrong password, an unknown account, an account that never set a password, and a suspended account all return the same `401 AUTH_INVALID`. After 10 wrong attempts on one identifier it returns `429 RATE_LIMITED` for 15 minutes; suggest signing in with a code.
 - **Password at signup:** `/v1/auth/signup/complete/` accepts optional `password` + `confirmPassword`. Rules: 8+ characters, not all digits, not a common password, not too close to the name/email. Errors come back as `400 VALIDATION_ERROR` with `error.details.password` or `error.details.confirmPassword` (lists of messages) so the form can show them under the field. Signup without a password still works; that account signs in with a code or Google.
@@ -28,7 +59,8 @@ React apps should generate types from the schema: `npx openapi-typescript http:/
 - Auth header: `Authorization: Bearer <access>` (15-minute access token; refresh with `/v1/auth/token/refresh/`).
 - Every response: `{ "success", "data", "error", "meta" }`. Errors: `error.code` (stable, switch on it), `error.message`, `error.requestId`, plus `error.details` (field errors) on validation failures.
 - Money: integer **paise**, e.g. `{ "amount": 1118000, "currency": "INR" }`. Request fields like `price`/`budget` are paise too.
-- Lists: cursor pagination with `?limit=` (max 50) and `?cursor=` from `meta.nextCursor`.
+- Lists: cursor pagination with `?limit=` (values above 50 are capped at 50) and `?cursor=` from `meta.nextCursor`.
+- Validation errors are `400 VALIDATION_ERROR`; a few domain checks use `422` (e.g. `INVALID_PHONE`). Unknown routes: `404 NOT_FOUND` in the same envelope. Trailing slash optional.
 - Unknown request fields are rejected with `400` (mass-assignment protection).
 - If something isn't yours, you get `404`, not `403`.
 
@@ -39,11 +71,12 @@ React apps should generate types from the schema: `npx openapi-typescript http:/
 | POST | `/v1/auth/otp/verify/` | anyone | `{challengeId, code}` → `{access, refresh, user}`. 5 attempts per code; single use |
 | POST | `/v1/auth/google/` | anyone | `{idToken, role?}` → `{access, refresh, user}`. `role` only used on first sign-in |
 | POST | `/v1/auth/login/` | anyone | `{identifier, password}` → `{access, refresh, user}`. 10/min per IP; 10 wrong passwords per identifier locks it for 15 min |
+| POST | `/v1/auth/password/change/` | user | `{currentPassword?, password, confirmPassword}` → `{access, refresh, user}`. No `currentPassword` needed within 10 min of a code/Google sign-in |
 | POST | `/v1/auth/password/reset/` | anyone | `{challengeId, code, password, confirmPassword}` → `{access, refresh, user}`. Code from `/otp/request/`; signs out other sessions |
 | POST | `/v1/auth/token/refresh/` | anyone | `{refresh}` → `{access, refresh}` (rotates; the old token is blacklisted) |
 | POST | `/v1/auth/logout/` | user | `{refresh}` → 204 |
 | POST | `/v1/auth/logout-all/` | user | revokes every refresh token |
-| GET | `/v1/auth/me/` | user | includes `needsOnboarding`, `profileId`, `kycStatus` |
+| GET | `/v1/auth/me/` | user | includes `needsOnboarding`, `profileId`, `kycStatus`, `hasPassword` |
 | POST | `/v1/auth/signup/complete/` | user | `{role: "brand"\|"creator", fullName, brandName?, displayName?, password?, confirmPassword?}`, once only. `admin` is impossible here |
 
 ## Creators
@@ -72,9 +105,11 @@ React apps should generate types from the schema: `npx openapi-typescript http:/
 ## Campaigns & bids
 | Method | Path | Who |
 |---|---|---|
-| GET | `/v1/campaigns/` (alias `/v1/creators/me/campaigns/`) | brand: its own; approved creator: open ones; **public** (anyone else): open ones without `brief`/`usageRights` |
+| GET | `/v1/campaigns/?platform=&budgetMin__gte=&budgetMax__lte=` | brand: its own (`?status=`); approved creator: open ones; **public** (anyone else): open ones without `brief`/`usageRights`. Each has `bidCount` |
 | POST | `/v1/campaigns/` | brand (`title, brief, platform, deliverables, budgetMin, budgetMax, closesAt, status?, usageRights`) |
-| GET/PATCH | `/v1/campaigns/{id}/` | brand owner (GET also for approved creators if open) |
+| GET | `/v1/campaigns/{id}/` | **public** for open campaigns (same guest view as the list); brand owner in any status |
+| PATCH | `/v1/campaigns/{id}/` | brand owner |
+| GET | `/v1/creators/me/bids/` (alias `/v1/creators/me/campaigns/`) | creator: own bids, each with `campaign` |
 | POST | `/v1/campaigns/{id}/close/` | brand owner (pending bids → rejected) |
 | GET | `/v1/campaigns/{id}/bids/` | brand owner: all; creator: only its own |
 | POST | `/v1/campaigns/{id}/bids/` | approved creator (`price, message, expectedViews?, deliveryDays`), one per campaign |

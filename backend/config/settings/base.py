@@ -50,6 +50,7 @@ MIDDLEWARE = [
     "apps.core.middleware.RequestIdMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    "apps.core.middleware.ApiOptionalSlashMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -119,7 +120,8 @@ DATA_UPLOAD_MAX_NUMBER_FIELDS = 200
 # --- Cache (throttles) ----------------------------------------------------------------------
 REDIS_URL = env("REDIS_URL", default="")
 if REDIS_URL:
-    CACHES = {"default": {"BACKEND": "django.core.cache.backends.redis.RedisCache", "LOCATION": REDIS_URL}}
+    # Shared, bounded pool + fail-open; see apps/core/cache.py for why the stock backend broke under ASGI.
+    CACHES = {"default": {"BACKEND": "apps.core.cache.ResilientRedisCache", "LOCATION": REDIS_URL}}
 else:
     CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 

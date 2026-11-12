@@ -8,6 +8,7 @@ urlpatterns = [
     path("google/", views.GoogleSignInView.as_view()),
     path("login/", views.LoginView.as_view()),
     path("password/reset/", views.PasswordResetView.as_view()),
+    path("password/change/", views.PasswordChangeView.as_view()),
     path("token/refresh/", views.TokenRefreshEnvelopeView.as_view()),
     path("logout/", views.LogoutView.as_view()),
     path("logout-all/", views.LogoutAllView.as_view()),

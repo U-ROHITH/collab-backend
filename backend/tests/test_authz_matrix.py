@@ -66,7 +66,7 @@ def test_order_actions_matrix(world: dict[str, Any], actor: str, path: str, body
 
 def test_campaign_matrix(world: dict[str, Any], anon: Any) -> None:
     cid = world["campaign"]["id"]
-    assert anon.get(f"/v1/campaigns/{cid}/").status_code == 401
+    assert anon.get(f"/v1/campaigns/{cid}/").json()["data"]["brief"] is None  # public guest view
     assert world["other_brand"].get(f"/v1/campaigns/{cid}/").status_code == 404
     assert world["other_brand"].patch(f"/v1/campaigns/{cid}/", {"title": "hacked"}, format="json").status_code == 404
     assert world["creator"].patch(f"/v1/campaigns/{cid}/", {"title": "hacked"}, format="json").status_code == 404
@@ -74,7 +74,7 @@ def test_campaign_matrix(world: dict[str, Any], anon: Any) -> None:
     guest_view = world["pending"].get("/v1/campaigns/").json()["data"]
     assert [c["id"] for c in guest_view] == [cid]
     assert guest_view[0]["brief"] is None and guest_view[0]["usageRights"] is None
-    assert world["pending"].get(f"/v1/campaigns/{cid}/").status_code == 404
+    assert world["pending"].get(f"/v1/campaigns/{cid}/").json()["data"]["brief"] is None  # guest view too
     r = world["pending"].post(
         f"/v1/campaigns/{cid}/bids/", {"price": 100_00, "message": "x", "deliveryDays": 1}, format="json"
     )

@@ -30,3 +30,6 @@ if settings.DEBUG:
         path("v1/schema/", SpectacularAPIView.as_view(), name="schema"),
         path("v1/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
     ]
+
+handler404 = "apps.core.views.not_found"
+handler500 = "apps.core.views.server_error"

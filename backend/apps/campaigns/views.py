@@ -11,10 +11,17 @@ from rest_framework.views import APIView
 from apps.brands.views import my_brand
 from apps.campaigns import services
 from apps.campaigns.models import Bid
-from apps.campaigns.serializers import BidInput, BidOutput, CampaignInput, CampaignOutput
+from apps.campaigns.serializers import (
+    BidInput,
+    BidOutput,
+    CampaignInput,
+    CampaignListQuery,
+    CampaignOutput,
+    MyBidOutput,
+)
 from apps.core.exceptions import NotFound
 from apps.identity.models import Role
-from apps.identity.permissions import IsApprovedCreator, IsBrand, IsBrandOrCreator
+from apps.identity.permissions import IsApprovedCreator, IsBrand, IsBrandOrCreator, IsCreator
 from apps.kyc.services import require_verified as require_kyc
 from apps.orders.serializers import OrderOutput
 
@@ -33,11 +40,14 @@ class CampaignListCreateView(ListAPIView):
     throttle_scope = "writes"
 
     def get_queryset(self):  # type: ignore[no-untyped-def]
+        query = CampaignListQuery(data=self.request.query_params.dict())
+        query.is_valid(raise_exception=True)
+        filters = query.validated_data
         user = self.request.user
         qs = services.campaigns_listed_for(user).select_related("brand")
-        if (s := self.request.query_params.get("status")) and getattr(user, "role", None) == Role.BRAND:
+        if (s := filters.get("status")) and getattr(user, "role", None) == Role.BRAND:
             qs = qs.filter(status=s)
-        return qs
+        return services.with_bid_count(services.filter_campaigns(qs, filters))
 
     def get_serializer_context(self) -> dict:
         return {**super().get_serializer_context(), "guest": not services.sees_full_campaigns(self.request.user)}
@@ -54,15 +64,19 @@ class CampaignListCreateView(ListAPIView):
 
 
 class CampaignDetailView(APIView):
-    permission_classes = [IsBrandOrCreator]
+    """GET is public for open campaigns, with the same guest view as the list; brands see their own in any status."""
+
+    permission_classes = [_PublicReadOrBrandOrCreator]
     throttle_scope = "writes"
 
     @extend_schema(responses=CampaignOutput)
     def get(self, request: Request, campaign_id: UUID) -> Response:
-        campaign = services.campaigns_visible_to(request.user).select_related("brand").filter(pk=campaign_id).first()
+        qs = services.with_bid_count(services.campaigns_listed_for(request.user).select_related("brand"))
+        campaign = qs.filter(pk=campaign_id).first()
         if campaign is None:
             raise NotFound()
-        return Response(CampaignOutput(campaign, context={"request": request}).data)
+        guest = not services.sees_full_campaigns(request.user)
+        return Response(CampaignOutput(campaign, context={"request": request, "guest": guest}).data)
 
     @extend_schema(request=CampaignInput, responses=CampaignOutput)
     def patch(self, request: Request, campaign_id: UUID) -> Response:
@@ -85,6 +99,20 @@ class CampaignCloseView(APIView):
                 context={"request": request},
             ).data
         )
+
+
+class MyBidsView(ListAPIView):
+    """GET: the signed-in creator's bids, newest first, each with its campaign (brand hidden: blind bidding)."""
+
+    permission_classes = [IsCreator]
+    serializer_class = MyBidOutput
+    throttle_scope = "writes"
+
+    def get_queryset(self):  # type: ignore[no-untyped-def]
+        return services.bids_of(self.request.user)
+
+    def get_serializer_context(self) -> dict:
+        return {**super().get_serializer_context(), "guest": not services.sees_full_campaigns(self.request.user)}
 
 
 class BidListCreateView(ListAPIView):
