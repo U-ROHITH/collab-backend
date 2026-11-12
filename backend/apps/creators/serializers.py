@@ -3,7 +3,7 @@ from typing import Any
 from rest_framework import serializers
 
 from apps.core.serializers import MoneyField, StrictSerializer
-from apps.creators.models import Creator, CreatorPackage, Platform, RepliesWithin
+from apps.creators.models import Creator, CreatorPackage, Platform, RepliesWithin, replies_within_label
 
 
 def money(paise: int | None) -> dict[str, Any] | None:
@@ -32,12 +32,25 @@ class PackageInput(StrictSerializer):
     active = serializers.BooleanField(required=False)
 
 
+class RepliesWithinField(serializers.Field):
+    """Hours in the database, "1h" | "6h" | "24h" | "3d" on the wire."""
+
+    def to_representation(self, value: int) -> str:
+        return replies_within_label(value)
+
+    def to_internal_value(self, data: Any) -> int:
+        by_label = {label: hours for hours, label in RepliesWithin.choices}
+        if data not in by_label:
+            raise serializers.ValidationError(f"Use one of: {', '.join(by_label)}.")
+        return by_label[data]
+
+
 class CreatorCardOutput(serializers.ModelSerializer):
     """Public view. Never includes contact details, payout info, or approval internals."""
 
     displayName = serializers.CharField(source="display_name")  # noqa: N815
     primaryPlatform = serializers.CharField(source="primary_platform")  # noqa: N815
-    repliesWithin = serializers.CharField(source="replies_within")  # noqa: N815
+    repliesWithin = RepliesWithinField(source="replies_within")  # noqa: N815
     followerCount = serializers.IntegerField(source="follower_count")  # noqa: N815
     avatarUrl = serializers.CharField(source="avatar_url")  # noqa: N815
     rating = serializers.FloatField()
@@ -101,7 +114,7 @@ class CreatorProfileInput(StrictSerializer):
     categories = serializers.ListField(child=serializers.CharField(max_length=40), max_length=5, required=False)
     location = serializers.CharField(max_length=80, required=False, allow_blank=True)
     primaryPlatform = serializers.ChoiceField(choices=Platform.choices, required=False)  # noqa: N815
-    repliesWithin = serializers.ChoiceField(choices=RepliesWithin.choices, required=False)  # noqa: N815
+    repliesWithin = RepliesWithinField(required=False)  # noqa: N815
 
 
 class CreatorSearchParams(StrictSerializer):

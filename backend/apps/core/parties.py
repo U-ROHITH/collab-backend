@@ -6,6 +6,8 @@ never included here (contact stays on-platform; see docs/03-security.md).
 
 from typing import Any
 
+from apps.creators.models import replies_within_label
+
 
 def creator_public(c: Any) -> dict[str, Any]:
     return {
@@ -17,7 +19,7 @@ def creator_public(c: Any) -> dict[str, Any]:
         "categories": list(c.categories or []),
         "location": c.location,
         "primaryPlatform": c.primary_platform,
-        "repliesWithin": c.replies_within,
+        "repliesWithin": replies_within_label(c.replies_within),
         "verified": c.verified,
         "followerCount": c.follower_count,
         "rating": c.rating,

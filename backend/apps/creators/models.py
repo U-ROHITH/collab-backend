@@ -18,11 +18,17 @@ class ApprovalStatus(models.TextChoices):
     REJECTED = "rejected", "Rejected"
 
 
-class RepliesWithin(models.TextChoices):
-    H1 = "1h", "1 hour"
-    H6 = "6h", "6 hours"
-    H24 = "24h", "24 hours"
-    D3 = "3d", "3 days"
+class RepliesWithin(models.IntegerChoices):
+    """Stored as hours (production's schema); the label is what the API shows and accepts."""
+
+    H1 = 1, "1h"
+    H6 = 6, "6h"
+    H24 = 24, "24h"
+    D3 = 72, "3d"
+
+
+def replies_within_label(hours: int) -> str:
+    return RepliesWithin(hours).label if hours in RepliesWithin.values else f"{hours}h"
 
 
 class Creator(BaseModel):
@@ -36,7 +42,7 @@ class Creator(BaseModel):
     categories = ArrayField(models.CharField(max_length=40), default=list, blank=True, size=5)
     location = models.CharField(max_length=80, blank=True)
     primary_platform = models.CharField(max_length=16, choices=Platform.choices, default=Platform.INSTAGRAM)
-    replies_within = models.CharField(max_length=4, choices=RepliesWithin.choices, default=RepliesWithin.H24)
+    replies_within = models.IntegerField(choices=RepliesWithin.choices, default=RepliesWithin.H24)
     approval_status = models.CharField(
         max_length=16, choices=ApprovalStatus.choices, default=ApprovalStatus.PENDING, db_index=True
     )
