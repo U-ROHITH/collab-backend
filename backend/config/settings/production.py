@@ -5,6 +5,7 @@ from django.core.exceptions import ImproperlyConfigured
 from .base import *  # noqa: F403
 from .base import (
     ALLOWED_HOSTS,
+    CORS_ALLOWED_ORIGIN_REGEXES,
     CORS_ALLOWED_ORIGINS,
     DATABASES,
     OTP_DELIVERY,
@@ -23,6 +24,8 @@ if not ALLOWED_HOSTS:
     raise ImproperlyConfigured("DJANGO_ALLOWED_HOSTS must be set in production.")
 if any("*" in o or o.startswith("http://") for o in CORS_ALLOWED_ORIGINS):
     raise ImproperlyConfigured("CORS origins must be exact https origins in production.")
+if any(not (r.startswith("^https://") and r.endswith("$")) for r in CORS_ALLOWED_ORIGIN_REGEXES):
+    raise ImproperlyConfigured("CORS origin patterns must be anchored https patterns (^https://...$) in production.")
 if OTP_DELIVERY != "live":
     raise ImproperlyConfigured("OTP_DELIVERY must be 'live' in production.")
 if len(env("DATA_ENCRYPTION_KEY", default="")) < 32:

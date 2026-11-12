@@ -145,9 +145,11 @@ GALLERY_MAX_ITEMS = 12
 
 # --- CORS -----------------------------------------------------------------------------------
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
+# Patterns for preview deployments, e.g. ^https://linkloom-frontend-[a-z0-9-]+\.vercel\.app$
+CORS_ALLOWED_ORIGIN_REGEXES = env.list("CORS_ALLOWED_ORIGIN_REGEXES", default=[])
 CORS_ALLOW_CREDENTIALS = False  # bearer tokens, not cookies
-# TEMPORARY (founder request): any origin may call the API. Safe-ish because auth is a bearer header,
-# never cookies, so browsers do not attach credentials cross-site. Turn off once frontend domains are known.
+# Off by default. Auth is a bearer header (never cookies), so even allow-all wouldn't let another site act as a
+# user, but production lists the frontend origins explicitly.
 CORS_ALLOW_ALL_ORIGINS = env.bool("CORS_ALLOW_ALL_ORIGINS", default=False)
 
 # --- DRF ------------------------------------------------------------------------------------
