@@ -151,7 +151,11 @@ def sent_codes(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 
 def _reset(client: APIClient, sent_codes: list[str], email: str, password: str, confirm: str | None = None) -> Any:
-    otp = client.post("/v1/auth/otp/request/", {"channel": "email", "destination": email}, format="json")
+    otp = client.post(
+        "/v1/auth/otp/request/",
+        {"channel": "email", "destination": email, "purpose": "password_reset"},
+        format="json",
+    )
     body = {
         "challengeId": otp.json()["data"]["challengeId"],
         "code": sent_codes[-1],
@@ -195,7 +199,11 @@ def test_reset_clears_a_password_lockout(anon: APIClient, sent_codes: list[str])
 
 def test_reset_with_wrong_code_changes_nothing(anon: APIClient, sent_codes: list[str]) -> None:
     User.objects.create_user(email="ananya@example.com", password="Old-Password-99")
-    otp = anon.post("/v1/auth/otp/request/", {"channel": "email", "destination": "ananya@example.com"}, format="json")
+    otp = anon.post(
+        "/v1/auth/otp/request/",
+        {"channel": "email", "destination": "ananya@example.com", "purpose": "password_reset"},
+        format="json",
+    )
     wrong = "000000" if sent_codes[-1] != "000000" else "111111"
     body = {"challengeId": otp.json()["data"]["challengeId"], "code": wrong, "password": GOOD, "confirmPassword": GOOD}
     resp = anon.post("/v1/auth/password/reset/", body, format="json")

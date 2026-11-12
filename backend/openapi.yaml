@@ -3304,6 +3304,15 @@ components:
           type: string
           minLength: 1
           maxLength: 254
+        purpose:
+          allOf:
+          - $ref: '#/components/schemas/PurposeEnum'
+          default: login
+          description: |-
+            `login` for /otp/verify/, `password_reset` for /password/reset/. A code only works for its purpose.
+
+            * `login` - Login
+            * `password_reset` - Password Reset
       required:
       - channel
       - destination
@@ -3770,7 +3779,7 @@ components:
         primaryPlatform:
           $ref: '#/components/schemas/PlatformEnum'
         repliesWithin:
-          $ref: '#/components/schemas/RepliesWithinEnum'
+          type: string
     PatchedListInputRequest:
       type: object
       properties:
@@ -3820,6 +3829,14 @@ components:
         * `instagram` - Instagram
         * `youtube` - YouTube
         * `other` - Other
+    PurposeEnum:
+      enum:
+      - login
+      - password_reset
+      type: string
+      description: |-
+        * `login` - Login
+        * `password_reset` - Password Reset
     ReadAll:
       type: object
       properties:
@@ -3857,18 +3874,6 @@ components:
           minLength: 1
       required:
       - refresh
-    RepliesWithinEnum:
-      enum:
-      - 1h
-      - 6h
-      - 24h
-      - 3d
-      type: string
-      description: |-
-        * `1h` - 1 hour
-        * `6h` - 6 hours
-        * `24h` - 24 hours
-        * `3d` - 3 days
     ReviewInputRequest:
       type: object
       properties:

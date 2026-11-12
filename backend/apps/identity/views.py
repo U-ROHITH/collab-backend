@@ -93,7 +93,7 @@ class LoginView(APIView):
     def post(self, request: Request) -> Response:
         data = LoginInput(data=request.data)
         data.is_valid(raise_exception=True)
-        result = services.login_with_password(**data.validated_data)
+        result = services.login_with_password(**data.validated_data, ip=_client_ip(request))
         return Response(
             AuthTokensOutput({"access": result.access, "refresh": result.refresh, "user": result.user}).data
         )
@@ -121,7 +121,6 @@ class PasswordChangeView(APIView):
             current_password=v.get("currentPassword") or None,
             auth_method=token.get("amr") if token is not None else None,
             auth_time=token.get("auth_time") if token is not None else None,
-            password_version=token.get("pwv") if token is not None else None,
         )
         return Response(
             AuthTokensOutput({"access": result.access, "refresh": result.refresh, "user": result.user}).data
@@ -143,7 +142,9 @@ class PasswordResetView(APIView):
         data = PasswordResetInput(data=request.data)
         data.is_valid(raise_exception=True)
         v = data.validated_data
-        result = services.reset_password(challenge_id=v["challengeId"], code=v["code"], password=v["password"])
+        result = services.reset_password(
+            challenge_id=v["challengeId"], code=v["code"], password=v["password"], ip=_client_ip(request)
+        )
         return Response(
             AuthTokensOutput({"access": result.access, "refresh": result.refresh, "user": result.user}).data
         )

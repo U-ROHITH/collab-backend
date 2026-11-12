@@ -5,12 +5,17 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from apps.core.serializers import StrictSerializer
-from apps.identity.models import OtpChannel, Role, User
+from apps.identity.models import OtpChannel, OtpPurpose, Role, User
 
 
 class OtpRequestInput(StrictSerializer):
     channel = serializers.ChoiceField(choices=OtpChannel.choices)
     destination = serializers.CharField(max_length=254)
+    purpose = serializers.ChoiceField(
+        choices=OtpPurpose.choices,
+        default=OtpPurpose.LOGIN,
+        help_text="`login` for /otp/verify/, `password_reset` for /password/reset/. A code only works for its purpose.",
+    )
 
     def validate(self, attrs: dict) -> dict:
         if attrs["channel"] == OtpChannel.EMAIL:
@@ -131,7 +136,9 @@ class PasswordResetInput(StrictSerializer):
     confirmPassword = serializers.CharField(max_length=128, write_only=True, trim_whitespace=False)  # noqa: N815
 
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
-        check_new_password(attrs, None, required=True)
+        from apps.identity.services import user_for_challenge
+
+        check_new_password(attrs, user_for_challenge(attrs["challengeId"]), required=True)
         return attrs
 
 

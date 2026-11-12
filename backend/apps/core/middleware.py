@@ -39,3 +39,23 @@ class ApiOptionalSlashMiddleware:
                 request.path_info = f"{path}/"
                 request.path = f"{request.path}/"
         return self.get_response(request)
+
+
+class HealthCheckMiddleware:
+    """Answer /healthz and /readyz before anything inspects the Host header or forces HTTPS.
+
+    Render's health checks come from an internal IP over plain HTTP. Handling them first lets
+    ALLOWED_HOSTS list only the real hostname without failing every deploy's health check.
+    """
+
+    def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        from apps.core.views import healthz, readyz
+
+        if request.path_info == "/healthz":
+            return healthz(request)
+        if request.path_info == "/readyz":
+            return readyz(request)
+        return self.get_response(request)

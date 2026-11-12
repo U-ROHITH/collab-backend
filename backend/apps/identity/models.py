@@ -78,8 +78,13 @@ class OtpChannel(models.TextChoices):
     EMAIL = "email", "Email"
 
 
+class OtpPurpose(models.TextChoices):
+    LOGIN = "login"
+    PASSWORD_RESET = "password_reset"
+
+
 class OtpChallenge(BaseModel):
-    """One-time login code. Only an HMAC of the code is stored."""
+    """One-time code, usable only for the purpose it was requested for. Only an HMAC of the code is stored."""
 
     channel = models.CharField(max_length=8, choices=OtpChannel.choices)
     destination = models.CharField(max_length=254, db_index=True)  # normalized phone (E.164) or email
@@ -88,6 +93,10 @@ class OtpChallenge(BaseModel):
     attempts = models.PositiveSmallIntegerField(default=0)
     consumed_at = models.DateTimeField(null=True, blank=True)
     requester_ip = models.GenericIPAddressField(null=True, blank=True)
+    # db_default too: other code writing to this table (an unmerged branch shares the database) mustn't break.
+    purpose = models.CharField(
+        max_length=16, choices=OtpPurpose.choices, default=OtpPurpose.LOGIN, db_default=OtpPurpose.LOGIN
+    )
 
     class Meta:
         indexes = [models.Index(fields=["destination", "created_at"])]

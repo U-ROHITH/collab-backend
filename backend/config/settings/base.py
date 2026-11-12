@@ -12,7 +12,10 @@ environ.Env.read_env(BASE_DIR / ".env", overwrite=False)
 
 SECRET_KEY = env("DJANGO_SECRET_KEY")
 DEBUG = env.bool("DJANGO_DEBUG", default=False)
-ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["*"])  # TEMPORARY: all hosts allowed (founder request)
+ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["*"])
+# Render sets RENDER_EXTERNAL_HOSTNAME (e.g. collab-api-ewju.onrender.com); always allow it.
+if (_render_hostname := env("RENDER_EXTERNAL_HOSTNAME", default="")) and "*" not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(_render_hostname)
 ADMIN_URL = env("DJANGO_ADMIN_URL", default="ops/")
 
 INSTALLED_APPS = [
@@ -45,6 +48,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "apps.core.middleware.HealthCheckMiddleware",  # first: before host validation and the HTTPS redirect
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "apps.core.middleware.RequestIdMiddleware",

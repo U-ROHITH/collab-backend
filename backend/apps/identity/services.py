@@ -18,7 +18,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.core.exceptions import Conflict, DomainError, TooManyRequests
 from apps.identity import google, providers
-from apps.identity.models import AuditLog, OtpChallenge, OtpChannel, Role, User, UserStatus
+from apps.identity.models import AuditLog, OtpChallenge, OtpChannel, OtpPurpose, Role, User, UserStatus
 
 logger = logging.getLogger(__name__)
 _INDIAN_MOBILE = re.compile(r"^(?:\+?91)?([6-9]\d{9})$")
@@ -67,7 +67,7 @@ def _test_code_for(dest: str) -> str | None:
     return None
 
 
-def request_otp(*, channel: str, destination: str, ip: str | None) -> OtpChallenge:
+def request_otp(*, channel: str, destination: str, ip: str | None, purpose: str = OtpPurpose.LOGIN) -> OtpChallenge:
     dest = normalize_destination(channel, destination)
     now = timezone.now()
     test_code = _test_code_for(dest)
@@ -84,6 +84,7 @@ def request_otp(*, channel: str, destination: str, ip: str | None) -> OtpChallen
             destination=dest,
             expires_at=now + timedelta(seconds=settings.OTP_TTL_SECONDS),
             requester_ip=ip,
+            purpose=purpose,
         )
         challenge.code_hash = _hash_code(challenge.id, code)
         challenge.save()
@@ -109,22 +110,23 @@ class AuthResult:
 
 
 def verify_otp(*, challenge_id: UUID, code: str) -> AuthResult:
-    challenge = _consume_challenge(challenge_id=challenge_id, code=code)
+    challenge = _consume_challenge(challenge_id=challenge_id, code=code, purpose=OtpPurpose.LOGIN)
     user = _get_or_create_user(challenge.channel, challenge.destination)
     if not user.is_active:
         raise OtpInvalid()
     return issue_tokens(user, method="otp")
 
 
-def _consume_challenge(*, challenge_id: UUID, code: str) -> OtpChallenge:
-    """Check a code and mark it used. Raises OtpInvalid."""
+def _consume_challenge(*, challenge_id: UUID, code: str, purpose: str) -> OtpChallenge:
+    """Check a code and mark it used. Raises OtpInvalid, also when the code was issued for another purpose
+    (so a sign-in code someone was tricked into sharing can't reset the password)."""
     # Attempt counting must commit even when the code is wrong, so the check happens
     # in its own transaction and the error is raised after commit.
     with transaction.atomic():
         challenge = OtpChallenge.objects.select_for_update().filter(pk=challenge_id).first()
         if challenge is None or challenge.consumed_at or challenge.expires_at <= timezone.now():
             ok = False
-        elif challenge.attempts >= settings.OTP_MAX_ATTEMPTS:
+        elif challenge.attempts >= settings.OTP_MAX_ATTEMPTS or challenge.purpose != purpose:
             ok = False
         else:
             challenge.attempts += 1
@@ -170,8 +172,12 @@ def google_sign_in(*, id_token: str, role: str | None) -> AuthResult:
     return issue_tokens(user, method="google")
 
 
+def _account_lookup(channel: str, destination: str) -> dict[str, str]:
+    return {"phone": destination} if channel == OtpChannel.SMS else {"email": destination}
+
+
 def _get_or_create_user(channel: str, destination: str) -> User:
-    lookup = {"phone": destination} if channel == OtpChannel.SMS else {"email": destination}
+    lookup = _account_lookup(channel, destination)
     user = User.objects.filter(**lookup).first()
     if user:
         return user
@@ -192,8 +198,11 @@ def _get_or_create_user(channel: str, destination: str) -> User:
 AUTH_METHODS = ("otp", "google", "password")
 
 
-def _password_version(user: User) -> str:
-    """Short fingerprint of the stored hash: changes whenever the password does. Not a secret by itself."""
+def password_version(user: User) -> str:
+    """Short fingerprint of the stored hash; changes whenever the password does. Empty while the account has
+    no password, so setting a first password (e.g. at signup) doesn't sign out the session doing it."""
+    if not user.has_usable_password():
+        return ""
     return hashlib.sha256(user.password.encode()).hexdigest()[:12]
 
 
@@ -202,19 +211,23 @@ def issue_tokens(user: User, *, method: str | None = None) -> AuthResult:
     if method:
         refresh["amr"] = method
         refresh["auth_time"] = int(timezone.now().timestamp())
-        refresh["pwv"] = _password_version(user)
+        refresh["pwv"] = password_version(user)
     return AuthResult(user=user, access=str(refresh.access_token), refresh=str(refresh))
 
 
 # --- Password sign-in ------------------------------------------------------------------------------
-# Per-account cap on wrong passwords, on top of the per-IP throttle, so a spread-out attack on one
-# account still stops. Counts by the identifier as typed (normalized), so unknown accounts are capped too.
+# Wrong-password limits, on top of the per-IP request throttle:
+# - per account + IP: 10 per 15 min. Someone guessing from one place only locks themselves out.
+# - per account: 50 per 15 min across all IPs, so a distributed attack on one account still stops.
+# Unknown identifiers are counted the same way, so a 429 doesn't reveal whether an account exists.
 LOGIN_MAX_FAILURES = 10
+LOGIN_MAX_FAILURES_PER_ACCOUNT = 50
 LOGIN_FAILURE_WINDOW_SECONDS = 15 * 60
 
 
-def _login_fail_key(normalized_identifier: str) -> str:
-    return f"pwlogin:fail:{hashlib.sha256(normalized_identifier.encode()).hexdigest()}"
+def _login_fail_key(normalized_identifier: str, ip: str | None = None) -> str:
+    scope = f"{normalized_identifier}|{ip}" if ip else normalized_identifier
+    return f"pwlogin:fail:{hashlib.sha256(scope.encode()).hexdigest()}"
 
 
 def _bump(key: str) -> int:
@@ -243,11 +256,11 @@ def _find_user_for_login(identifier: str) -> tuple[str, User | None]:
     return phone, User.objects.filter(phone=phone).first()
 
 
-def login_with_password(*, identifier: str, password: str) -> AuthResult:
+def login_with_password(*, identifier: str, password: str, ip: str | None = None) -> AuthResult:
     key, user = _find_user_for_login(identifier)
-    fail_key = _login_fail_key(key)
+    here_key, account_key = _login_fail_key(key, ip), _login_fail_key(key)
     # Count the attempt before checking, so parallel guesses can't all slip in under the limit.
-    if _bump(fail_key) > LOGIN_MAX_FAILURES:
+    if _bump(here_key) > LOGIN_MAX_FAILURES or _bump(account_key) > LOGIN_MAX_FAILURES_PER_ACCOUNT:
         raise TooManyRequests("Too many sign-in attempts. Try again in 15 minutes, or sign in with a code.")
 
     if user is None or not user.has_usable_password():
@@ -256,7 +269,7 @@ def login_with_password(*, identifier: str, password: str) -> AuthResult:
     if not (user.check_password(password) and user.status == UserStatus.ACTIVE):
         raise AuthInvalid()
 
-    cache.delete(fail_key)
+    cache.delete_many([here_key, account_key])
     AuditLog.objects.create(
         actor=user, action="user.login_password", entity_type="user", entity_id=str(user.pk), metadata={}
     )
@@ -269,18 +282,28 @@ PASSWORD_CHANGE_FRESH_SECONDS = 10 * 60
 class ReauthRequired(DomainError):
     status_code = 403
     code = "REAUTH_REQUIRED"
-    message = "Enter your current password, or sign in with a code again to set a new one."
+    message = "Enter your current password. Forgot it? Reset it with a code."
 
 
-def reset_password(*, challenge_id: UUID, code: str, password: str) -> AuthResult:
-    """Forgot password: prove control of the email/phone with a fresh code, then set a new password."""
-    challenge = _consume_challenge(challenge_id=challenge_id, code=code)
+def reset_password(*, challenge_id: UUID, code: str, password: str, ip: str | None = None) -> AuthResult:
+    """Forgot password: a fresh `password_reset` code proves control of the email/phone; set a new password."""
+    challenge = _consume_challenge(challenge_id=challenge_id, code=code, purpose=OtpPurpose.PASSWORD_RESET)
     user = _get_or_create_user(challenge.channel, challenge.destination)
     if not user.is_active:
         raise OtpInvalid()
     _set_password_everywhere(user, password, action="user.password_reset")
-    cache.delete(_login_fail_key(challenge.destination))
+    cache.delete_many([_login_fail_key(challenge.destination), _login_fail_key(challenge.destination, ip)])
     return issue_tokens(user, method="otp")
+
+
+def user_for_challenge(challenge_id: UUID) -> User | None:
+    """The account a code was sent to (unsaved stand-in if none yet), for checking a new password against it.
+    Read-only: doesn't consume the code."""
+    challenge = OtpChallenge.objects.filter(pk=challenge_id).only("channel", "destination").first()
+    if challenge is None:
+        return None
+    lookup = _account_lookup(challenge.channel, challenge.destination)
+    return User.objects.filter(**lookup).first() or User(**lookup)
 
 
 def change_password(
@@ -290,13 +313,12 @@ def change_password(
     current_password: str | None,
     auth_method: str | None,
     auth_time: int | None,
-    password_version: str | None,
 ) -> AuthResult:
     """Set a new password while signed in.
 
-    Allowed with the current password, or without one when the session was opened by a code or Google in the
-    last few minutes (the "forgot password -> sign in with a code -> set a new one" flow, and first-time setup
-    for code-only accounts). A token alone isn't enough, so a stolen token can't become a permanent takeover.
+    With an existing password: the current one is required (forgot it? use a `password_reset` code with
+    /password/reset/). Without one (code or Google accounts): allowed within a few minutes of signing in with
+    a code or Google, so a stolen token or a phished sign-in code can't replace a password the owner set.
     """
     if current_password:
         attempts_key = f"pwchange:fail:{user.pk}"
@@ -307,9 +329,7 @@ def change_password(
         cache.delete(attempts_key)
     else:
         fresh = auth_time is not None and timezone.now().timestamp() - auth_time <= PASSWORD_CHANGE_FRESH_SECONDS
-        # A token from before the last password change can't skip the current password, even if still fresh.
-        same_password = password_version == _password_version(user)
-        if not (auth_method in ("otp", "google") and fresh and same_password):
+        if not (not user.has_usable_password() and auth_method in ("otp", "google") and fresh):
             raise ReauthRequired()
     _set_password_everywhere(user, password, action="user.password_changed")
     return issue_tokens(user, method="password")

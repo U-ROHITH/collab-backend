@@ -26,3 +26,14 @@ def test_admin_keeps_html_error_pages() -> None:
 def test_not_found_outside_v1_is_json_too() -> None:
     resp = not_found(rf.get("/wp-login.php"), Http404())
     assert resp.status_code == 404 and json.loads(resp.content)["error"]["code"] == "NOT_FOUND"
+
+
+def test_health_checks_work_with_any_host_and_plain_http(settings) -> None:  # type: ignore[no-untyped-def]
+    from django.test import Client
+
+    settings.ALLOWED_HOSTS = ["collab-api-ewju.onrender.com"]
+    settings.SECURE_SSL_REDIRECT = True
+    client = Client(HTTP_HOST="10.237.26.192:10000")
+    resp = client.get("/healthz")
+    assert resp.status_code == 200 and json.loads(resp.content)["status"] == "ok"
+    assert client.get("/v1/campaigns/").status_code == 400  # other paths still validate the host
