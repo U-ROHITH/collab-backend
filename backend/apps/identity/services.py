@@ -176,9 +176,15 @@ def _get_or_create_user(channel: str, destination: str) -> User:
     if user:
         return user
     try:
-        return User.objects.create_user(**lookup)
-    except IntegrityError:  # concurrent first login
-        return User.objects.get(**lookup)
+        with transaction.atomic():
+            return User.objects.create_user(**lookup)
+    except IntegrityError:
+        # A concurrent first sign-in created the same user. Anything else (e.g. a NOT NULL column the model
+        # doesn't know about) must surface as itself, not as a misleading "user does not exist".
+        user = User.objects.filter(**lookup).first()
+        if user is None:
+            raise
+        return user
 
 
 # How a session was opened. Carried in every token (refresh keeps the original values), so endpoints can ask
