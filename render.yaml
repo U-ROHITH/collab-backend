@@ -15,7 +15,7 @@ services:
       - key: DJANGO_SETTINGS_MODULE
         value: config.settings.production
       - key: DJANGO_ALLOWED_HOSTS
-        value: "*"             # TEMPORARY per founder; restrict to the real domain later
+        value: collab-api-ewju.onrender.com   # health checks bypass host validation (HealthCheckMiddleware)
       - key: DJANGO_SECRET_KEY
         sync: false            # set a 64+ char value (generateValue gives 44 chars; prod requires 50+)
       - key: JWT_SIGNING_KEY
@@ -31,7 +31,11 @@ services:
       - key: DATABASE_URL
         sync: false            # NEW Supabase project, transaction pooler (6543)
       - key: CORS_ALLOW_ALL_ORIGINS
-        value: "true"          # TEMPORARY per founder; set exact origins later
+        value: "false"
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://linkloom-frontend.vercel.app
+      - key: CORS_ALLOWED_ORIGIN_REGEXES
+        value: ^https://linkloom-frontend-[a-z0-9-]+\.vercel\.app$   # Vercel previews
       - key: TWO_FACTOR_API_KEY
         sync: false
       - key: RESEND_API_KEY
