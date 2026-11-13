@@ -75,10 +75,10 @@ def test_new_user_signs_up_with_role(anon: APIClient, google_certs: None, keypai
     data = resp.json()["data"]
     assert data["access"] and data["refresh"]
     assert data["user"]["email"] == "asha@example.com"
-    assert data["user"]["role"] == "creator" and data["user"]["needsOnboarding"] is False
+    # Even if role is passed in request, new users require onboarding before role is assigned
+    assert data["user"]["role"] is None and data["user"]["needsOnboarding"] is True
     assert data["user"]["fullName"] == "Asha Verma"
     assert data["user"]["kycStatus"] == "not_started"
-    assert User.objects.get(email="asha@example.com").creator.display_name == "Asha Verma"
 
 
 def test_without_role_needs_onboarding(anon: APIClient, google_certs: None, keypair: tuple[str, str]) -> None:

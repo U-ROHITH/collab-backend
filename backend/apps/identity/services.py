@@ -170,12 +170,12 @@ class GoogleSignInFailed(DomainError):
     message = "Google sign-in failed. Please try again."
 
 
-def google_sign_in(*, id_token: str, role: str | None) -> AuthResult:
+def google_sign_in(*, id_token: str, role: str | None = None) -> AuthResult:
     """Sign in (or sign up) with a Google ID token.
 
-    The account is matched on the Google-verified email, so a person who used email OTP before lands
-    in the same account. `role` only applies to an account that hasn't picked one yet; an existing
-    account keeps its role (the frontend reads `user.role` from the response).
+    The account is matched on the Google-verified email. If it's a new user,
+    their role remains None and needsOnboarding is True until they complete
+    the onboarding flow via POST /v1/auth/signup/complete/.
     """
     try:
         claims = google.verify_id_token(id_token)
@@ -188,12 +188,14 @@ def google_sign_in(*, id_token: str, role: str | None) -> AuthResult:
     user = _get_or_create_user(OtpChannel.EMAIL, email)
     if not user.is_active:
         raise GoogleSignInFailed()
-    if user.role is None and role:
-        name = str(claims.get("name") or "").strip()[:120] or email.split("@")[0]
-        try:
-            user = complete_signup(user=user, role=role, full_name=name)
-        except Conflict:  # a concurrent request finished signup first
-            user = User.objects.get(pk=user.pk)
+
+    # Pre-fill full_name from Google claims if not already set, but DO NOT complete signup.
+    # The role is only assigned when the user completes POST /v1/auth/signup/complete/.
+    name = str(claims.get("name") or "").strip()[:120]
+    if name and not user.full_name:
+        user.full_name = name
+        user.save(update_fields=["full_name", "updated_at"])
+
     return issue_tokens(user, method="google")
 
 
@@ -382,6 +384,7 @@ def complete_signup(
     brand_name: str = "",
     display_name: str = "",
     password: str | None = None,
+    phone: str = "",
 ) -> User:
     """Set role exactly once and create the matching profile. `admin` is never allowed here."""
     from apps.brands.services import create_brand_for_user
@@ -399,6 +402,14 @@ def complete_signup(
         if password:
             locked.set_password(password)
             fields.append("password")
+        if phone and not locked.phone:
+            try:
+                clean_phone = normalize_destination(OtpChannel.SMS, phone)
+                if not User.objects.filter(phone=clean_phone).exclude(pk=locked.pk).exists():
+                    locked.phone = clean_phone
+                    fields.append("phone")
+            except Exception:
+                pass
         locked.save(update_fields=fields)
         if role == Role.BRAND:
             create_brand_for_user(user=locked, name=brand_name or full_name)

@@ -120,6 +120,9 @@ class SignupCompleteInput(StrictSerializer):
     fullName = serializers.CharField(max_length=120)  # noqa: N815
     brandName = serializers.CharField(max_length=120, required=False, allow_blank=True)  # noqa: N815
     displayName = serializers.CharField(max_length=80, required=False, allow_blank=True)  # noqa: N815
+    phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    mobile = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    mobileNumber = serializers.CharField(max_length=20, required=False, allow_blank=True)  # noqa: N815
     password = serializers.CharField(max_length=128, required=False, write_only=True, trim_whitespace=False)
     confirmPassword = serializers.CharField(  # noqa: N815
         max_length=128, required=False, write_only=True, trim_whitespace=False
