@@ -81,6 +81,7 @@ class OtpChannel(models.TextChoices):
 class OtpPurpose(models.TextChoices):
     LOGIN = "login"
     PASSWORD_RESET = "password_reset"
+    SIGNUP = "signup"
 
 
 class OtpChallenge(BaseModel):

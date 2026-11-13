@@ -14,7 +14,11 @@ class OtpRequestInput(StrictSerializer):
     purpose = serializers.ChoiceField(
         choices=OtpPurpose.choices,
         default=OtpPurpose.LOGIN,
-        help_text="`login` for /otp/verify/, `password_reset` for /password/reset/. A code only works for its purpose.",
+        help_text=(
+            "`signup` to check if an account exists before dispatching an OTP (returns 409 USER_EXISTS if it does). "
+            "`login` for /otp/verify/, `password_reset` for /password/reset/. "
+            "A code only works for its purpose."
+        ),
     )
 
     def validate(self, attrs: dict) -> dict:

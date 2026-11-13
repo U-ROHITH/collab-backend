@@ -70,6 +70,14 @@ def _test_code_for(dest: str) -> str | None:
 def request_otp(*, channel: str, destination: str, ip: str | None, purpose: str = OtpPurpose.LOGIN) -> OtpChallenge:
     dest = normalize_destination(channel, destination)
     now = timezone.now()
+
+    # Signup mode: refuse to send an OTP when the account already exists.
+    # The frontend reads the 409 USER_EXISTS code and skips the code box entirely,
+    # prompting the user to sign in with their password instead.
+    if purpose == OtpPurpose.SIGNUP:
+        if find_user_by_identifier(dest) is not None:
+            raise Conflict("This email or phone already has an account. Sign in with your password.", code="USER_EXISTS")
+
     test_code = _test_code_for(dest)
     recent = OtpChallenge.objects.filter(destination=dest, created_at__gte=now - timedelta(hours=1)).count()
     if test_code is None and recent >= settings.OTP_MAX_PER_DESTINATION_PER_HOUR:
