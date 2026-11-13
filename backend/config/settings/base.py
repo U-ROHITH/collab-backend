@@ -170,9 +170,9 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "anon": "60/min",
         "user": "120/min",
-        "otp_request": "5/min",
-        "otp_verify": "10/min",
-        "login": "10/min",
+        "otp_request": env("THROTTLE_OTP_REQUEST", default="120/min"),
+        "otp_verify": env("THROTTLE_OTP_VERIFY", default="120/min"),
+        "login": "60/min",
         "bids": "30/hour",
         "offers": "50/day",
         "writes": "60/min",
@@ -227,7 +227,8 @@ GOOGLE_OAUTH_CLIENT_IDS = env.list(
 OTP_DELIVERY = env("OTP_DELIVERY", default="live")  # "live" | "console" (console only allowed with DEBUG)
 OTP_TTL_SECONDS = 300
 OTP_MAX_ATTEMPTS = 5
-OTP_MAX_PER_DESTINATION_PER_HOUR = 5
+OTP_RATE_LIMIT_ENABLED = env.bool("OTP_RATE_LIMIT_ENABLED", default=False)  # Disabled for testing; set True in prod
+OTP_MAX_PER_DESTINATION_PER_HOUR = env.int("OTP_MAX_PER_DESTINATION_PER_HOUR", default=1000)
 # Test logins (QA, app-store review): these destinations get OTP_TEST_CODE instead of a real SMS/email
 # and skip the hourly limit. Normalized form: +91XXXXXXXXXX or lower-case email. Empty both before launch.
 OTP_TEST_ACCOUNTS = env.list("OTP_TEST_ACCOUNTS", default=[])

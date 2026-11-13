@@ -62,7 +62,17 @@ def _hash_code(challenge_id: UUID, code: str) -> str:
 def _test_code_for(dest: str) -> str | None:
     """Fixed code for configured test logins (QA / app-store review), else None."""
     code = settings.OTP_TEST_CODE
-    if code and re.fullmatch(r"\d{6}", code) and dest in {d.strip().lower() for d in settings.OTP_TEST_ACCOUNTS}:
+    if not (code and re.fullmatch(r"\d{6}", code)):
+        return None
+    whitelist = {d.strip().lower() for d in settings.OTP_TEST_ACCOUNTS}
+    expanded = set(whitelist)
+    for item in whitelist:
+        if item.startswith("+91"):
+            expanded.add(item[3:])
+        elif len(item) == 10 and item.isdigit():
+            expanded.add(f"+91{item}")
+    dest_clean = dest.strip().lower()
+    if dest_clean in expanded:
         return code
     return None
 
@@ -84,8 +94,10 @@ def request_otp(*, channel: str, destination: str, ip: str | None, purpose: str 
     otp_purpose = OtpPurpose.LOGIN if is_signup else purpose
 
     test_code = _test_code_for(dest)
+    rate_limit_enabled = getattr(settings, "OTP_RATE_LIMIT_ENABLED", False)
+    max_per_hour = getattr(settings, "OTP_MAX_PER_DESTINATION_PER_HOUR", 1000)
     recent = OtpChallenge.objects.filter(destination=dest, created_at__gte=now - timedelta(hours=1)).count()
-    if test_code is None and recent >= settings.OTP_MAX_PER_DESTINATION_PER_HOUR:
+    if rate_limit_enabled and test_code is None and recent >= max_per_hour:
         raise TooManyRequests("Too many codes requested. Try again in an hour.")
 
     code = test_code or f"{secrets.randbelow(1_000_000):06d}"
