@@ -30,18 +30,24 @@ def update_brand(*, brand: Brand, data: dict[str, Any]) -> Brand:
         data["industry"] = data["category"]
 
     billing_email = data.pop("billingEmail", None)
-    if billing_email is not None:
-        addr = dict(brand.billing_address or {})
-        addr["email"] = billing_email
-        brand.billing_address = addr
 
     if "billingAddress" in data:
-        addr = dict(data["billingAddress"])
-        if billing_email is not None:
+        raw_addr = data.pop("billingAddress")
+        if isinstance(raw_addr, str):
+            addr = {"raw": raw_addr, "line1": raw_addr}
+        elif isinstance(raw_addr, dict):
+            addr = dict(raw_addr)
+        else:
+            addr = {}
+        if billing_email:
             addr["email"] = billing_email
         elif "email" not in addr and isinstance(brand.billing_address, dict) and "email" in brand.billing_address:
             addr["email"] = brand.billing_address["email"]
-        data["billingAddress"] = addr
+        brand.billing_address = addr
+    elif billing_email is not None:
+        addr = dict(brand.billing_address if isinstance(brand.billing_address, dict) else {})
+        addr["email"] = billing_email
+        brand.billing_address = addr
 
     changes = {_BRAND_FIELDS[k]: v for k, v in data.items() if k in _BRAND_FIELDS}
     for field, value in changes.items():

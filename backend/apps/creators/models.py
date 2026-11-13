@@ -49,6 +49,10 @@ class Creator(BaseModel):
     verified = models.BooleanField(default=False)  # set only from verified social data
     follower_count = models.PositiveIntegerField(null=True, blank=True)  # from social sync, not self-reported
     avatar_url = models.URLField(max_length=500, blank=True)
+    dob = models.DateField(null=True, blank=True)
+    gender = models.CharField(max_length=40, blank=True)
+    social_media_links = models.JSONField(default=dict, blank=True)
+    social_accounts = models.JSONField(default=list, blank=True)
     rating_sum = models.PositiveIntegerField(default=0)
     rating_count = models.PositiveIntegerField(default=0)
 

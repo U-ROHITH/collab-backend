@@ -56,6 +56,11 @@ class CreatorCardOutput(serializers.ModelSerializer):
     rating = serializers.FloatField()
     reviewCount = serializers.IntegerField(source="rating_count")  # noqa: N815
     startingPrice = serializers.SerializerMethodField()  # noqa: N815
+    city = serializers.SerializerMethodField()
+    region = serializers.SerializerMethodField()
+    languages = serializers.SerializerMethodField()
+    instagram = serializers.SerializerMethodField()
+    youtube = serializers.SerializerMethodField()
 
     class Meta:
         model = Creator
@@ -66,6 +71,8 @@ class CreatorCardOutput(serializers.ModelSerializer):
             "bio",
             "categories",
             "location",
+            "city",
+            "region",
             "primaryPlatform",
             "repliesWithin",
             "verified",
@@ -74,7 +81,35 @@ class CreatorCardOutput(serializers.ModelSerializer):
             "rating",
             "reviewCount",
             "startingPrice",
+            "dob",
+            "gender",
+            "languages",
+            "instagram",
+            "youtube",
         )
+
+    def get_city(self, obj: Creator) -> str:
+        loc = obj.location or ""
+        return loc.split(",")[0].strip() if loc else ""
+
+    def get_region(self, obj: Creator) -> str:
+        loc = obj.location or ""
+        return loc.split(",")[1].strip() if "," in loc else ""
+
+    def get_languages(self, obj: Creator) -> list[str]:
+        if isinstance(obj.social_media_links, dict):
+            return obj.social_media_links.get("languages", [])
+        return []
+
+    def get_instagram(self, obj: Creator) -> str:
+        if isinstance(obj.social_media_links, dict):
+            return obj.social_media_links.get("instagram", "")
+        return ""
+
+    def get_youtube(self, obj: Creator) -> str:
+        if isinstance(obj.social_media_links, dict):
+            return obj.social_media_links.get("youtube", "")
+        return ""
 
     def get_startingPrice(self, obj: Creator) -> dict[str, Any] | None:  # noqa: N802
         return money(getattr(obj, "starting_price", None))
@@ -111,10 +146,17 @@ class CreatorSelfOutput(CreatorCardOutput):
 class CreatorProfileInput(StrictSerializer):
     displayName = serializers.CharField(max_length=80, required=False)  # noqa: N815
     bio = serializers.CharField(max_length=2000, required=False, allow_blank=True)
-    categories = serializers.ListField(child=serializers.CharField(max_length=40), max_length=5, required=False)
-    location = serializers.CharField(max_length=80, required=False, allow_blank=True)
+    categories = serializers.ListField(child=serializers.CharField(max_length=40), max_length=10, required=False)
+    languages = serializers.ListField(child=serializers.CharField(max_length=40), required=False)
+    location = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    city = serializers.CharField(max_length=80, required=False, allow_blank=True)
+    region = serializers.CharField(max_length=80, required=False, allow_blank=True)
     primaryPlatform = serializers.ChoiceField(choices=Platform.choices, required=False)  # noqa: N815
     repliesWithin = RepliesWithinField(required=False)  # noqa: N815
+    dob = serializers.DateField(required=False, allow_null=True)
+    gender = serializers.CharField(max_length=40, required=False, allow_blank=True)
+    instagram = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    youtube = serializers.CharField(max_length=120, required=False, allow_blank=True)
 
 
 class CreatorSearchParams(StrictSerializer):

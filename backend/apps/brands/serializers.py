@@ -10,7 +10,7 @@ from apps.creators.serializers import CreatorCardOutput, PackageOutput
 class BrandOutput(serializers.ModelSerializer):
     legalName = serializers.CharField(source="legal_name")  # noqa: N815
     stateCode = serializers.CharField(source="state_code")  # noqa: N815
-    billingAddress = serializers.JSONField(source="billing_address")  # noqa: N815
+    billingAddress = serializers.SerializerMethodField()  # noqa: N815
     billingEmail = serializers.SerializerMethodField()  # noqa: N815
     logoUrl = serializers.CharField(source="logo_url")  # noqa: N815
 
@@ -28,6 +28,11 @@ class BrandOutput(serializers.ModelSerializer):
             "billingAddress",
             "billingEmail",
         )
+
+    def get_billingAddress(self, obj: Brand) -> Any:  # noqa: N802
+        if isinstance(obj.billing_address, dict) and "raw" in obj.billing_address:
+            return obj.billing_address["raw"]
+        return obj.billing_address
 
     def get_billingEmail(self, obj: Brand) -> str:  # noqa: N802
         if isinstance(obj.billing_address, dict):
@@ -53,7 +58,7 @@ class BrandInput(StrictSerializer):
     legalName = serializers.CharField(max_length=200, required=False, allow_blank=True)  # noqa: N815
     gstin = serializers.CharField(max_length=20, required=False, allow_blank=True)
     stateCode = serializers.CharField(max_length=10, required=False, allow_blank=True)  # noqa: N815
-    billingAddress = BillingAddressInput(required=False)  # noqa: N815
+    billingAddress = serializers.JSONField(required=False)  # noqa: N815
     billingEmail = serializers.EmailField(required=False, allow_blank=True, allow_null=True)  # noqa: N815
 
     def validate_website(self, value: str) -> str:

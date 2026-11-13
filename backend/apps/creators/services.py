@@ -17,6 +17,8 @@ _PROFILE_FIELDS = {
     "location": "location",
     "primaryPlatform": "primary_platform",
     "repliesWithin": "replies_within",
+    "dob": "dob",
+    "gender": "gender",
 }
 _PACKAGE_FIELDS = {
     "title": "title",
@@ -48,10 +50,36 @@ def create_catalogue_creator(*, actor: User, display_name: str, **fields: Any) -
 
 
 def update_creator_profile(*, creator: Creator, data: dict[str, Any]) -> Creator:
-    changes = {_PROFILE_FIELDS[k]: v for k, v in data.items()}
+    data = dict(data)
+    city = data.pop("city", None)
+    region = data.pop("region", None)
+    if city or region:
+        parts = [p.strip() for p in (city, region) if p and p.strip()]
+        data["location"] = ", ".join(parts)
+
+    instagram = data.pop("instagram", None)
+    youtube = data.pop("youtube", None)
+    languages = data.pop("languages", None)
+
+    social_links = dict(creator.social_media_links or {})
+    if instagram is not None:
+        social_links["instagram"] = instagram
+    if youtube is not None:
+        social_links["youtube"] = youtube
+    if languages is not None:
+        social_links["languages"] = languages
+    creator.social_media_links = social_links
+
+    changes = {_PROFILE_FIELDS[k]: v for k, v in data.items() if k in _PROFILE_FIELDS}
     for field, value in changes.items():
         setattr(creator, field, value)
-    creator.save(update_fields=[*changes.keys(), "updated_at"])
+
+    update_fields = list(changes.keys())
+    if "social_media_links" not in update_fields:
+        update_fields.append("social_media_links")
+    update_fields.append("updated_at")
+
+    creator.save(update_fields=update_fields)
     return creator
 
 
