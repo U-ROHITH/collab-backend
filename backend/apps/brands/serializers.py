@@ -11,29 +11,56 @@ class BrandOutput(serializers.ModelSerializer):
     legalName = serializers.CharField(source="legal_name")  # noqa: N815
     stateCode = serializers.CharField(source="state_code")  # noqa: N815
     billingAddress = serializers.JSONField(source="billing_address")  # noqa: N815
+    billingEmail = serializers.SerializerMethodField()  # noqa: N815
     logoUrl = serializers.CharField(source="logo_url")  # noqa: N815
 
     class Meta:
         model = Brand
-        fields = ("id", "name", "website", "industry", "logoUrl", "legalName", "gstin", "stateCode", "billingAddress")
+        fields = (
+            "id",
+            "name",
+            "website",
+            "industry",
+            "logoUrl",
+            "legalName",
+            "gstin",
+            "stateCode",
+            "billingAddress",
+            "billingEmail",
+        )
+
+    def get_billingEmail(self, obj: Brand) -> str:  # noqa: N802
+        if isinstance(obj.billing_address, dict):
+            return obj.billing_address.get("email") or getattr(obj.owner, "email", "") or ""
+        return getattr(obj.owner, "email", "") or ""
 
 
 class BillingAddressInput(StrictSerializer):
-    line1 = serializers.CharField(max_length=200)
+    line1 = serializers.CharField(max_length=200, required=False, allow_blank=True)
     line2 = serializers.CharField(max_length=200, required=False, allow_blank=True)
-    city = serializers.CharField(max_length=80)
-    state = serializers.CharField(max_length=80)
-    pincode = serializers.RegexField(r"^[1-9][0-9]{5}$")
+    city = serializers.CharField(max_length=80, required=False, allow_blank=True)
+    state = serializers.CharField(max_length=80, required=False, allow_blank=True)
+    pincode = serializers.CharField(max_length=10, required=False, allow_blank=True)
+    country = serializers.CharField(max_length=80, required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
 
 
 class BrandInput(StrictSerializer):
     name = serializers.CharField(max_length=120, required=False)
-    website = serializers.URLField(max_length=300, required=False, allow_blank=True)
+    website = serializers.CharField(max_length=300, required=False, allow_blank=True)
     industry = serializers.CharField(max_length=80, required=False, allow_blank=True)
+    category = serializers.CharField(max_length=80, required=False, allow_blank=True)
     legalName = serializers.CharField(max_length=200, required=False, allow_blank=True)  # noqa: N815
-    gstin = serializers.RegexField(GSTIN_REGEX, required=False, allow_blank=True)
-    stateCode = serializers.RegexField(r"^[0-9]{2}$", required=False, allow_blank=True)  # noqa: N815
+    gstin = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    stateCode = serializers.CharField(max_length=10, required=False, allow_blank=True)  # noqa: N815
     billingAddress = BillingAddressInput(required=False)  # noqa: N815
+    billingEmail = serializers.EmailField(required=False, allow_blank=True, allow_null=True)  # noqa: N815
+
+    def validate_website(self, value: str) -> str:
+        value = value.strip()
+        if value and not (value.startswith("http://") or value.startswith("https://")):
+            return f"https://{value}"
+        return value
 
 
 class ListOutput(serializers.ModelSerializer):

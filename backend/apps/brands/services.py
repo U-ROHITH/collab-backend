@@ -25,10 +25,34 @@ def create_brand_for_user(*, user: User, name: str) -> Brand:
 
 
 def update_brand(*, brand: Brand, data: dict[str, Any]) -> Brand:
-    changes = {_BRAND_FIELDS[k]: v for k, v in data.items()}
+    data = dict(data)
+    if "category" in data and "industry" not in data:
+        data["industry"] = data["category"]
+
+    billing_email = data.pop("billingEmail", None)
+    if billing_email is not None:
+        addr = dict(brand.billing_address or {})
+        addr["email"] = billing_email
+        brand.billing_address = addr
+
+    if "billingAddress" in data:
+        addr = dict(data["billingAddress"])
+        if billing_email is not None:
+            addr["email"] = billing_email
+        elif "email" not in addr and isinstance(brand.billing_address, dict) and "email" in brand.billing_address:
+            addr["email"] = brand.billing_address["email"]
+        data["billingAddress"] = addr
+
+    changes = {_BRAND_FIELDS[k]: v for k, v in data.items() if k in _BRAND_FIELDS}
     for field, value in changes.items():
         setattr(brand, field, value)
-    brand.save(update_fields=[*changes.keys(), "updated_at"])
+
+    update_fields = list(changes.keys())
+    if "billing_address" not in update_fields:
+        update_fields.append("billing_address")
+    update_fields.append("updated_at")
+
+    brand.save(update_fields=update_fields)
     return brand
 
 
