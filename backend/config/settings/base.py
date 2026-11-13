@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "apps.messaging",
     "apps.kyc",
     "apps.realtime",
+    "apps.money",
 ]
 
 MIDDLEWARE = [
@@ -261,6 +262,11 @@ ORDER_POLICY = {
     "payment_window_hours": 48,
     "auto_approve_hours": 72,
 }
+
+# --- Razorpay / payments ----------------------------------------------------------------------
+RAZORPAY_KEY_ID = env("RAZORPAY_KEY_ID", default="rzp_test_collabmarketplace")
+RAZORPAY_KEY_SECRET = env("RAZORPAY_KEY_SECRET", default="test_secret_collab")
+RAZORPAY_WEBHOOK_SECRET = env("RAZORPAY_WEBHOOK_SECRET", default="test_webhook_secret")
 
 DEV_ENDPOINTS_ENABLED = False
 
