@@ -13,9 +13,11 @@ class OtpRequestInput(StrictSerializer):
     destination = serializers.CharField(max_length=254)
     purpose = serializers.ChoiceField(
         choices=OtpPurpose.choices,
-        default=OtpPurpose.LOGIN,
+        required=False,
+        allow_null=True,
+        default=None,
         help_text=(
-            "`signup` to check if an account exists before dispatching an OTP (returns 409 USER_EXISTS if it does). "
+            "Omit (or pass `signup`) on the sign-up page — returns 409 USER_EXISTS if the account already exists. "
             "`login` for /otp/verify/, `password_reset` for /password/reset/. "
             "A code only works for its purpose."
         ),

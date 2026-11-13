@@ -67,17 +67,21 @@ def _test_code_for(dest: str) -> str | None:
     return None
 
 
-def request_otp(*, channel: str, destination: str, ip: str | None, purpose: str = OtpPurpose.LOGIN) -> OtpChallenge:
+def request_otp(*, channel: str, destination: str, ip: str | None, purpose: str | None = None) -> OtpChallenge:
     dest = normalize_destination(channel, destination)
     now = timezone.now()
 
-    # Signup mode: refuse to send an OTP when the account already exists.
-    # The frontend reads the 409 USER_EXISTS code and skips the code box entirely,
-    # prompting the user to sign in with their password instead.
-    if purpose == OtpPurpose.SIGNUP:
+    # Signup mode: when purpose is omitted (None) or explicitly "signup", check for existing account.
+    # The frontend omits purpose on the sign-up page and relies on 409 USER_EXISTS to avoid showing
+    # the OTP input field for already-registered emails/phones.
+    is_signup = purpose in (None, OtpPurpose.SIGNUP)
+    if is_signup:
         _, existing = _find_user_for_login(dest)
         if existing is not None:
-            raise Conflict("This email or phone already has an account. Sign in with your password.", code="USER_EXISTS")
+            raise Conflict("An account with this email already exists.", code="USER_EXISTS")
+
+    # For the OTP challenge record, resolve the actual purpose (default to login for signup flow).
+    otp_purpose = OtpPurpose.LOGIN if is_signup else purpose
 
     test_code = _test_code_for(dest)
     recent = OtpChallenge.objects.filter(destination=dest, created_at__gte=now - timedelta(hours=1)).count()
@@ -93,7 +97,7 @@ def request_otp(*, channel: str, destination: str, ip: str | None, purpose: str 
             destination=dest,
             expires_at=now + timedelta(seconds=settings.OTP_TTL_SECONDS),
             requester_ip=ip,
-            purpose=purpose,
+            purpose=otp_purpose,
         )
         challenge.code_hash = _hash_code(challenge.id, code)
         challenge.save()
