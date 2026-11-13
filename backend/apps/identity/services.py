@@ -75,7 +75,8 @@ def request_otp(*, channel: str, destination: str, ip: str | None, purpose: str 
     # The frontend reads the 409 USER_EXISTS code and skips the code box entirely,
     # prompting the user to sign in with their password instead.
     if purpose == OtpPurpose.SIGNUP:
-        if find_user_by_identifier(dest) is not None:
+        _, existing = _find_user_for_login(dest)
+        if existing is not None:
             raise Conflict("This email or phone already has an account. Sign in with your password.", code="USER_EXISTS")
 
     test_code = _test_code_for(dest)
