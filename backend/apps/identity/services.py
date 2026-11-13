@@ -245,19 +245,27 @@ def verify_google_id_token(token: str) -> dict[str, Any]:
     from google.auth.transport import requests as google_requests
     from google.oauth2 import id_token
 
-    audience = settings.GOOGLE_OAUTH_CLIENT_ID or None
+    audience = getattr(settings, "GOOGLE_OAUTH_CLIENT_ID", "") or getattr(settings, "GOOGLE_CLIENT_ID", "") or None
     try:
         req = google_requests.Request()
         idinfo = id_token.verify_oauth2_token(token, req, audience=audience)
     except Exception as exc:
-        logger.warning("Google ID token verification failed: %s", exc)
-        raise GoogleTokenInvalid() from None
+        logger.error(
+            "[Google Token Verification Error] Token verification failed: %s (Type: %s, Audience configured: %s)",
+            exc,
+            type(exc).__name__,
+            audience,
+            exc_info=True,
+        )
+        raise GoogleTokenInvalid(f"Google sign-in token verification failed: {exc}") from None
 
     email = idinfo.get("email")
     if not email:
+        logger.warning("[Google Auth Warning] Google ID token is missing the email claim: %s", idinfo)
         raise GoogleTokenInvalid("Google token does not contain an email address.")
 
     if not idinfo.get("email_verified", False):
+        logger.warning("[Google Auth Warning] Email in Google ID token is unverified: %s", email)
         raise GoogleEmailUnverified()
 
     return idinfo

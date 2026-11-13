@@ -38,6 +38,80 @@ class PackageInput(StrictSerializer):
     active = serializers.BooleanField(required=False)
 
 
+def extract_social_handle(platform: str, raw_value: str) -> str:
+    """Extract a pure username/handle from a raw handle, username, or full URL."""
+    val = (raw_value or "").strip()
+    if not val:
+        return ""
+    # Strip URL query params and fragments
+    val = val.split("?")[0].split("#")[0].rstrip("/")
+    plat = platform.lower().strip()
+
+    if plat == "instagram":
+        if "instagram.com/" in val:
+            val = val.split("instagram.com/")[-1].strip("/")
+    elif plat == "youtube":
+        if "youtube.com/" in val:
+            val = val.split("youtube.com/")[-1].strip("/")
+        val = val.lstrip("@")
+    elif plat in ("twitter", "x"):
+        if "twitter.com/" in val:
+            val = val.split("twitter.com/")[-1].strip("/")
+        elif "x.com/" in val:
+            val = val.split("x.com/")[-1].strip("/")
+    elif plat == "tiktok":
+        if "tiktok.com/" in val:
+            val = val.split("tiktok.com/")[-1].strip("/")
+        val = val.lstrip("@")
+    elif plat in ("facebook", "fb"):
+        if "facebook.com/" in val:
+            val = val.split("facebook.com/")[-1].strip("/")
+    elif plat == "linkedin":
+        if "linkedin.com/in/" in val:
+            val = val.split("linkedin.com/in/")[-1].strip("/")
+        elif "linkedin.com/" in val:
+            val = val.split("linkedin.com/")[-1].strip("/")
+
+    # Strip any remaining leading @ or slashes
+    val = val.lstrip("@").strip("/")
+    return val
+
+
+def normalize_social_url(platform: str, raw_value: str) -> str:
+    """Ensure any stored social input is normalized into a proper, fully-qualified URL with https://."""
+    val = (raw_value or "").strip()
+    if not val:
+        return ""
+    plat = platform.lower().strip()
+    handle = extract_social_handle(plat, val)
+
+    if plat == "instagram":
+        if handle:
+            return f"https://www.instagram.com/{handle}/"
+        if not val.startswith("http://") and not val.startswith("https://"):
+            return f"https://{val}"
+        return val.replace("http://", "https://")
+
+    if plat == "youtube":
+        if handle:
+            return f"https://www.youtube.com/@{handle}"
+        if not val.startswith("http://") and not val.startswith("https://"):
+            return f"https://{val}"
+        return val.replace("http://", "https://")
+
+    if plat in ("twitter", "x"):
+        if handle:
+            return f"https://x.com/{handle}"
+
+    if plat == "tiktok":
+        if handle:
+            return f"https://www.tiktok.com/@{handle}"
+
+    if not val.startswith("http://") and not val.startswith("https://"):
+        return f"https://{val}"
+    return val.replace("http://", "https://")
+
+
 class CreatorCardOutput(serializers.ModelSerializer):
     """Public view. Never includes contact details, payout info, or approval internals."""
 
@@ -47,7 +121,7 @@ class CreatorCardOutput(serializers.ModelSerializer):
     followerCount = serializers.IntegerField(source="follower_count")  # noqa: N815
     avatarUrl = serializers.SerializerMethodField()  # noqa: N815
     profilePicture = serializers.SerializerMethodField()  # noqa: N815
-    socialMediaUrls = serializers.JSONField(source="social_media_links", read_only=True)  # noqa: N815
+    socialMediaUrls = serializers.SerializerMethodField()  # noqa: N815
     socialAccounts = serializers.SerializerMethodField()  # noqa: N815
     rating = serializers.FloatField()
     reviewCount = serializers.IntegerField(source="rating_count")  # noqa: N815
@@ -75,11 +149,39 @@ class CreatorCardOutput(serializers.ModelSerializer):
             "startingPrice",
         )
 
+    def get_socialMediaUrls(self, obj: Creator) -> dict[str, str]:  # noqa: N802
+        result: dict[str, str] = {}
+        links = obj.social_media_links or {}
+        if isinstance(links, dict):
+            for k, v in links.items():
+                if isinstance(v, str) and v.strip():
+                    result[k] = normalize_social_url(k, v)
+        if obj.social_accounts and isinstance(obj.social_accounts, list):
+            for item in obj.social_accounts:
+                if isinstance(item, dict):
+                    plat = item.get("platform")
+                    handle = item.get("handle")
+                    if plat and handle and plat not in result:
+                        result[plat] = normalize_social_url(plat, handle)
+        return result
+
     def get_socialAccounts(self, obj: Creator) -> list[dict[str, Any]]:  # noqa: N802
-        if obj.social_accounts:
-            return obj.social_accounts
+        if obj.social_accounts and isinstance(obj.social_accounts, list):
+            accounts = []
+            for item in obj.social_accounts:
+                if isinstance(item, dict) and item.get("platform"):
+                    plat = item["platform"]
+                    raw_handle = item.get("handle", "")
+                    clean_handle = extract_social_handle(plat, raw_handle)
+                    accounts.append({"platform": plat, "handle": clean_handle})
+            if accounts:
+                return accounts
         if obj.social_media_links and isinstance(obj.social_media_links, dict):
-            return [{"platform": k, "handle": v} for k, v in obj.social_media_links.items() if isinstance(v, str)]
+            return [
+                {"platform": k, "handle": extract_social_handle(k, v)}
+                for k, v in obj.social_media_links.items()
+                if isinstance(v, str)
+            ]
         return []
 
     def get_avatarUrl(self, obj: Creator) -> str | None:  # noqa: N802
@@ -225,6 +327,13 @@ class SocialAccountInput(StrictSerializer):
                 f"Unsupported platform '{value}'. Supported platforms: {', '.join(sorted(SUPPORTED_PLATFORMS))}."
             )
         return plat
+
+    def validate_handle(self, value: str) -> str:
+        plat = "other"
+        if hasattr(self, "initial_data") and isinstance(self.initial_data, dict):
+            plat = self.initial_data.get("platform", "other")
+        cleaned = extract_social_handle(plat, value)
+        return cleaned or value.strip()
 
 
 class CreatorProfileInput(StrictSerializer):
@@ -385,6 +494,8 @@ class CreatorProfileInput(StrictSerializer):
                     ) from None
         if not isinstance(value, (dict, list)):
             raise serializers.ValidationError("Social media URLs must be a dictionary or list of links.")
+        if isinstance(value, dict):
+            return {k: normalize_social_url(k, v) if isinstance(v, str) else v for k, v in value.items()}
         return value
 
 

@@ -34,11 +34,15 @@ def test_update_profile_text_fields(creator: Any) -> None:
     assert resp.status_code == 200, resp.json()
     data = resp.json()["data"]
     assert data["displayName"] == "Priya Sharma"
-    assert data["socialMediaUrls"] == payload["socialMediaUrls"]
+    expected_urls = {
+        "instagram": "https://www.instagram.com/priyasharma/",
+        "youtube": "https://www.youtube.com/@priyasharma",
+    }
+    assert data["socialMediaUrls"] == expected_urls
 
     db_creator = Creator.objects.get(pk=data["id"])
     assert db_creator.display_name == "Priya Sharma"
-    assert db_creator.social_media_links == payload["socialMediaUrls"]
+    assert db_creator.social_media_links == expected_urls
 
 
 def test_update_profile_with_name_alias(creator: Any) -> None:
@@ -52,7 +56,7 @@ def test_update_profile_with_name_alias(creator: Any) -> None:
     assert resp.status_code == 200, resp.json()
     data = resp.json()["data"]
     assert data["displayName"] == "Priya S."
-    assert data["socialMediaUrls"] == {"instagram": "https://instagram.com/priyas"}
+    assert data["socialMediaUrls"] == {"instagram": "https://www.instagram.com/priyas/"}
 
 
 def test_update_profile_multipart_with_valid_image(creator: Any) -> None:
@@ -69,7 +73,7 @@ def test_update_profile_multipart_with_valid_image(creator: Any) -> None:
     assert data["profilePicture"] is not None
     assert "avatar" in data["profilePicture"]
     assert data["profilePicture"].endswith(".png")
-    assert data["socialMediaUrls"] == {"instagram": "https://instagram.com/aarav"}
+    assert data["socialMediaUrls"] == {"instagram": "https://www.instagram.com/aarav/"}
 
     # Verify directly in DB
     db_creator = Creator.objects.get(pk=data["id"])
@@ -77,7 +81,7 @@ def test_update_profile_multipart_with_valid_image(creator: Any) -> None:
     assert bool(db_creator.profile_picture) is True
     assert "avatar" in db_creator.profile_picture.name
     assert db_creator.profile_picture.name.endswith(".png")
-    assert db_creator.social_media_links == {"instagram": "https://instagram.com/aarav"}
+    assert db_creator.social_media_links == {"instagram": "https://www.instagram.com/aarav/"}
 
 
 def test_profile_picture_exceeding_5mb_rejected(creator: Any) -> None:
@@ -129,7 +133,7 @@ def test_get_profile_returns_uploaded_picture_and_social_links(creator: Any) -> 
     assert data["displayName"] == "Rohan Verma"
     assert "my_pic" in data["profilePicture"]
     assert data["profilePicture"].endswith(".png")
-    assert data["socialMediaUrls"] == {"youtube": "https://youtube.com/@rohan"}
+    assert data["socialMediaUrls"] == {"youtube": "https://www.youtube.com/@rohan"}
 
 
 def test_upload_avatar_pipeline_success(creator: Any) -> None:

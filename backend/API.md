@@ -17,6 +17,7 @@ React apps should generate types from the schema: `npx openapi-typescript http:/
 | Method | Path | Who | Notes |
 |---|---|---|---|
 | POST | `/v1/auth/login/` | anyone | `{identifier, password}` → `{access, refresh, user}`. Direct password login supporting email or mobile number |
+| POST | `/v1/auth/google/` | anyone | `{idToken, role?}` → `{access, refresh, user}`. Google OAuth ID token verification & login/signup |
 | POST | `/v1/auth/otp/request/` | anyone | `{channel: "sms"\|"email", destination}` → `{challengeId, expiresIn}`. 5/min per IP, 5/hour per destination |
 | POST | `/v1/auth/otp/verify/` | anyone | `{challengeId, code}` → `{access, refresh, user}`. 5 attempts per code; single use |
 | POST | `/v1/auth/email/request/` | user | `{email}` → `{challengeId, expiresAt, expiresIn}`. Dispatches verification code to email |

@@ -205,8 +205,14 @@ DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="")
 EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=10)
 
 # --- Social OAuth ---------------------------------------------------------------------------
-GOOGLE_OAUTH_CLIENT_ID = env("GOOGLE_OAUTH_CLIENT_ID", default="")
-GOOGLE_OAUTH_CLIENT_SECRET = env("GOOGLE_OAUTH_CLIENT_SECRET", default="")
+GOOGLE_OAUTH_CLIENT_ID = (
+    env("GOOGLE_OAUTH_CLIENT_ID", default="")
+    or env("GOOGLE_CLIENT_ID", default="")
+    or env("GOOGLE_OAUTH_CLIENT_IDS", default="")
+)
+GOOGLE_CLIENT_ID = GOOGLE_OAUTH_CLIENT_ID
+GOOGLE_OAUTH_CLIENT_SECRET = env("GOOGLE_OAUTH_CLIENT_SECRET", default=env("GOOGLE_CLIENT_SECRET", default=""))
+GOOGLE_CLIENT_SECRET = GOOGLE_OAUTH_CLIENT_SECRET
 
 # --- Money (pending CA sign-off; see docs/04) -------------------------------------------------
 FEE_CONFIG = {

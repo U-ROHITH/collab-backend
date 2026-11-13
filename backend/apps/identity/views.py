@@ -101,13 +101,30 @@ class GoogleAuthView(APIView):
     def post(self, request: Request) -> Response:
         data = GoogleAuthInput(data=request.data)
         data.is_valid(raise_exception=True)
-        result = services.authenticate_with_google(
-            token=data.validated_data["idToken"],
-            role=data.validated_data.get("role"),
-        )
-        return Response(
-            AuthTokensOutput({"access": result.access, "refresh": result.refresh, "user": result.user}).data
-        )
+        try:
+            result = services.authenticate_with_google(
+                token=data.validated_data["idToken"],
+                role=data.validated_data.get("role"),
+            )
+            return Response(
+                AuthTokensOutput({"access": result.access, "refresh": result.refresh, "user": result.user}).data
+            )
+        except DomainError as exc:
+            logger.warning(
+                "[Google Auth Error] Domain validation error: %s (code=%s, status=%s)",
+                exc.message,
+                exc.code,
+                exc.status_code,
+            )
+            raise
+        except Exception as exc:
+            logger.error(
+                "[Google Auth Critical Error] Unexpected exception during Google authentication: %s (%s)",
+                exc,
+                type(exc).__name__,
+                exc_info=True,
+            )
+            raise
 
 
 class TokenRefreshEnvelopeView(TokenRefreshView):
