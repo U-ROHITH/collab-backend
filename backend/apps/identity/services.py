@@ -437,3 +437,76 @@ def grant_admin(*, email: str, password: str) -> User:
             user.save()
         AuditLog.objects.create(actor=None, action="admin.granted", entity_type="user", entity_id=str(user.pk))
     return user
+
+
+def delete_user_completely(*, user: User) -> None:
+    """Cascade delete a user and all their associated data across all apps."""
+    with transaction.atomic():
+        # 1. Clean up Creator profile and relations
+        creator = getattr(user, "creator", None)
+        if not creator:
+            from apps.creators.models import Creator
+
+            creator = Creator.objects.filter(user=user).first()
+        if creator:
+            from apps.campaigns.models import Bid
+            from apps.creators.models import CreatorPackage
+            from apps.money.models import CreatorWallet, WithdrawalRequest
+            from apps.offers.models import Offer
+            from apps.orders.models import Order, Review
+
+            Review.objects.filter(creator=creator).delete()
+            Bid.objects.filter(creator=creator).delete()
+            Offer.objects.filter(creator=creator).delete()
+            CreatorPackage.objects.filter(creator=creator).delete()
+            Order.objects.filter(creator=creator).delete()
+            wallets = CreatorWallet.objects.filter(creator=creator)
+            WithdrawalRequest.objects.filter(wallet__in=wallets).delete()
+            wallets.delete()
+            creator.delete()
+
+        # 2. Clean up Brand profile and relations
+        brand = getattr(user, "brand", None)
+        if not brand:
+            from apps.brands.models import Brand
+
+            brand = Brand.objects.filter(owner=user).first()
+        if brand:
+            from apps.brands.models import BrandList, CartItem
+            from apps.campaigns.models import Bid, Campaign
+            from apps.money.models import PaymentReceipt, PaymentSession
+            from apps.offers.models import Offer
+            from apps.orders.models import Order
+
+            campaigns = Campaign.objects.filter(brand=brand)
+            Bid.objects.filter(campaign__in=campaigns).delete()
+            campaigns.delete()
+
+            CartItem.objects.filter(brand=brand).delete()
+            BrandList.objects.filter(brand=brand).delete()
+            Offer.objects.filter(brand=brand).delete()
+            Order.objects.filter(brand=brand).delete()
+            PaymentSession.objects.filter(brand=brand).delete()
+            PaymentReceipt.objects.filter(brand=brand).delete()
+            brand.delete()
+
+        # 3. Clean up User direct relations
+        from apps.notifications.models import Notification
+        from apps.orders.models import Dispute
+        from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+
+        Notification.objects.filter(user=user).delete()
+        Dispute.objects.filter(opened_by=user).delete()
+        Dispute.objects.filter(resolved_by=user).delete()
+
+        tokens = OutstandingToken.objects.filter(user=user)
+        BlacklistedToken.objects.filter(token__in=tokens).delete()
+        tokens.delete()
+
+        AuditLog.objects.filter(actor=user).delete()
+        if user.email:
+            OtpChallenge.objects.filter(destination__iexact=user.email).delete()
+        if user.phone:
+            OtpChallenge.objects.filter(destination=user.phone).delete()
+
+        user.delete()
