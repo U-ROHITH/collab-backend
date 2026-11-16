@@ -86,7 +86,14 @@ def envelope_exception_handler(exc: Exception, context: dict[str, Any]) -> Respo
     response = drf_default_handler(exc, context)
     if response is None:
         # Unhandled -> 500 with a generic message; details only in logs/Sentry.
-        logger.exception("Unhandled error", extra={"request_id": request_id})
+        # requestId goes in the message itself: it's what the client sees, and the log line must be searchable by it.
+        logger.exception(
+            "Unhandled error requestId=%s %s %s",
+            request_id,
+            getattr(request, "method", "-"),
+            getattr(request, "path", "-"),
+            extra={"request_id": request_id},
+        )
         return Response(_envelope("INTERNAL_ERROR", "Something went wrong.", request_id), status=500)
 
     code = next((c for t, c in _DRF_CODES.items() if isinstance(exc, t)), "ERROR")

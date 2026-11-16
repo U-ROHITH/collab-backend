@@ -4,6 +4,7 @@ Never log provider URLs (2Factor puts the API key in the path) or codes in live 
 """
 
 import logging
+import re
 
 import requests
 from django.conf import settings
@@ -50,7 +51,9 @@ def send_email_otp(email: str, code: str) -> None:
             )
             if resp.status_code < 300:
                 return
-            logger.error("Resend rejected email (status %s); falling back to SMTP", resp.status_code)
+            logger.error(
+                "Resend rejected email (status %s, %s); falling back to SMTP", resp.status_code, _resend_reason(resp)
+            )
         except requests.RequestException as exc:
             logger.error("Resend failed (%s); falling back to SMTP", type(exc).__name__)
     if not settings.EMAIL_HOST:
@@ -60,6 +63,19 @@ def send_email_otp(email: str, code: str) -> None:
     except Exception as exc:  # noqa: BLE001
         logger.error("SMTP delivery failed: %s", type(exc).__name__)
         raise DeliveryError from None
+
+
+_EMAIL_RE = re.compile(r"[^\s()<>@,;:]+@[^\s()<>@,;:]+")
+
+
+def _resend_reason(resp: requests.Response) -> str:
+    """Resend's error name + message (e.g. the sandbox-sender restriction). Never includes the recipient or code."""
+    try:
+        body = resp.json()
+        message = _EMAIL_RE.sub("<email>", str(body.get("message", "")))[:200]
+        return f"{body.get('name', '?')}: {message}"
+    except ValueError:
+        return "unparseable body"
 
 
 def _console_mode() -> bool:
