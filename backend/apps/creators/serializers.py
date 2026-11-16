@@ -55,13 +55,34 @@ def build_platform_url(platform: str, handle: str | None) -> str | None:
     return None
 
 
+def _form_number(data: Any, *, percent: bool = False) -> Any:
+    """Form inputs arrive as text: blank means "not set"; thousands separators (and a trailing % for rates)
+    are dropped. Anything else (e.g. "30K") is left for the field to reject on that field."""
+    if not isinstance(data, str):
+        return data
+    text = data.strip().replace(",", "").replace(" ", "").replace("\u00a0", "")
+    if percent:
+        text = text.removesuffix("%")
+    return None if text == "" else text
+
+
+class FormIntegerField(serializers.IntegerField):
+    def run_validation(self, data: Any = serializers.empty) -> Any:
+        return super().run_validation(_form_number(data) if data is not serializers.empty else data)
+
+
+class FormRateField(serializers.FloatField):
+    def run_validation(self, data: Any = serializers.empty) -> Any:
+        return super().run_validation(_form_number(data, percent=True) if data is not serializers.empty else data)
+
+
 class PlatformStatsInput(StrictSerializer):
     """Input for platform stats. Unknown fields are rejected with 400 by StrictSerializer."""
 
     handle = serializers.CharField(max_length=120, required=False, allow_blank=True)
-    followersCount = serializers.IntegerField(min_value=0, max_value=2_000_000_000, required=False, allow_null=True)  # noqa: N815
-    engagementRate = serializers.FloatField(min_value=0, max_value=100, required=False, allow_null=True)  # noqa: N815
-    avgViews = serializers.IntegerField(min_value=0, max_value=2_000_000_000, required=False, allow_null=True)  # noqa: N815
+    followersCount = FormIntegerField(min_value=0, max_value=2_000_000_000, required=False, allow_null=True)  # noqa: N815
+    engagementRate = FormRateField(min_value=0, max_value=100, required=False, allow_null=True)  # noqa: N815
+    avgViews = FormIntegerField(min_value=0, max_value=2_000_000_000, required=False, allow_null=True)  # noqa: N815
 
 
 class PlatformInputField(serializers.Field):
@@ -140,7 +161,7 @@ class PackageInput(StrictSerializer):
 class RepliesWithinField(serializers.Field):
     """Hours in the database, "1h" | "6h" | "24h" | "3d" on the wire."""
 
-    def to_representation(self, value: int) -> str:
+    def to_representation(self, value: int | None) -> str | None:
         return replies_within_label(value)
 
     def to_internal_value(self, data: Any) -> int:
@@ -154,8 +175,8 @@ class CreatorCardOutput(serializers.ModelSerializer):
     """Public view. Never includes contact details, payout info, or approval internals."""
 
     displayName = serializers.CharField(source="display_name")  # noqa: N815
-    primaryPlatform = serializers.CharField(source="primary_platform")  # noqa: N815
-    repliesWithin = RepliesWithinField(source="replies_within")  # noqa: N815
+    primaryPlatform = serializers.CharField(source="primary_platform", allow_null=True)  # noqa: N815
+    repliesWithin = RepliesWithinField(source="replies_within", allow_null=True)  # noqa: N815
     followerCount = serializers.SerializerMethodField()  # noqa: N815
     avatarUrl = serializers.CharField(source="avatar_url")  # noqa: N815
     rating = serializers.FloatField()
@@ -309,7 +330,7 @@ class CreatorProfileInput(StrictSerializer):
     repliesWithin = RepliesWithinField(required=False)  # noqa: N815
     dob = serializers.DateField(required=False, allow_null=True)
     gender = serializers.CharField(max_length=40, required=False, allow_blank=True)
-    followerCount = serializers.IntegerField(min_value=0, max_value=2_000_000_000, required=False, allow_null=True)  # noqa: N815
+    followerCount = FormIntegerField(min_value=0, max_value=2_000_000_000, required=False, allow_null=True)  # noqa: N815
     instagram = PlatformInputField(platform="instagram", required=False, allow_null=True)
     youtube = PlatformInputField(platform="youtube", required=False, allow_null=True)
     platforms = PlatformsDictField(

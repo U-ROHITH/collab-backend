@@ -15,7 +15,7 @@ migration = importlib.import_module("apps.creators.migrations.0004_replies_withi
 
 def test_api_shows_and_accepts_the_short_labels(creator: Any, anon: Any) -> None:
     me = creator.get("/v1/creators/me/").json()["data"]
-    assert me["repliesWithin"] == "24h"
+    assert me["repliesWithin"] is None  # not set until the creator picks one
     resp = creator.patch("/v1/creators/me/", {"repliesWithin": "3d"}, format="json")
     assert resp.status_code == 200 and resp.json()["data"]["repliesWithin"] == "3d"
     assert Creator.objects.get(pk=me["id"]).replies_within == 72

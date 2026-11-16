@@ -27,7 +27,9 @@ class RepliesWithin(models.IntegerChoices):
     D3 = 72, "3d"
 
 
-def replies_within_label(hours: int) -> str:
+def replies_within_label(hours: int | None) -> str | None:
+    if hours is None:
+        return None  # not set by the creator
     return RepliesWithin(hours).label if hours in RepliesWithin.values else f"{hours}h"
 
 
@@ -41,8 +43,9 @@ class Creator(BaseModel):
     bio = models.TextField(max_length=2000, blank=True)
     categories = ArrayField(models.CharField(max_length=40), default=list, blank=True, size=5)
     location = models.CharField(max_length=80, blank=True)
-    primary_platform = models.CharField(max_length=16, choices=Platform.choices, default=Platform.INSTAGRAM)
-    replies_within = models.IntegerField(choices=RepliesWithin.choices, default=RepliesWithin.H24)
+    # Both stay NULL until the creator picks them: no made-up defaults shown to brands.
+    primary_platform = models.CharField(max_length=16, choices=Platform.choices, null=True, blank=True)  # noqa: DJ001 (NULL = not chosen yet)
+    replies_within = models.IntegerField(choices=RepliesWithin.choices, null=True, blank=True)
     approval_status = models.CharField(
         max_length=16, choices=ApprovalStatus.choices, default=ApprovalStatus.PENDING, db_index=True
     )
@@ -65,7 +68,10 @@ class Creator(BaseModel):
             models.CheckConstraint(
                 condition=Q(approval_status__in=ApprovalStatus.values), name="creator_approval_valid"
             ),
-            models.CheckConstraint(condition=Q(primary_platform__in=Platform.values), name="creator_platform_valid"),
+            models.CheckConstraint(
+                condition=Q(primary_platform__isnull=True) | Q(primary_platform__in=Platform.values),
+                name="creator_platform_valid",
+            ),
         ]
         indexes = [models.Index(fields=["approval_status", "created_at"])]
 

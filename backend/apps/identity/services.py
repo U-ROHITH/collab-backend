@@ -412,7 +412,7 @@ def complete_signup(
                 pass
         locked.save(update_fields=fields)
         if role == Role.BRAND:
-            create_brand_for_user(user=locked, name=brand_name or full_name)
+            create_brand_for_user(user=locked, name=brand_name)  # never the owner's personal name
         else:
             create_creator_for_user(user=locked, display_name=display_name or full_name)
         AuditLog.objects.create(
