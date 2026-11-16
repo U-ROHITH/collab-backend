@@ -17,8 +17,9 @@ class KycProfileAdmin(admin.ModelAdmin):
     To reject: type the reason in "Rejection reason", save, then run "Reject" on the row.
     """
 
-    list_display = ("user", "status", "pan_name", "pan_last4", "id_type", "bank_ifsc", "submitted_at")
-    list_filter = ("status", "id_type")
+    list_display = ("user", "role", "status", "pan_name", "pan_last4", "id_type", "bank_ifsc", "submitted_at")
+    list_filter = ("status", "user__role", "id_type")
+    list_select_related = ("user",)
     search_fields = ("user__email", "user__phone", "pan_name", "bank_holder_name")
     fields = (
         "user",
@@ -51,6 +52,10 @@ class KycProfileAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request: HttpRequest, obj: KycProfile | None = None) -> bool:
         return False
+
+    @admin.display(description="Role", ordering="user__role")
+    def role(self, obj: KycProfile) -> str:
+        return obj.user.role or "-"
 
     @admin.display(description="ID document")
     def id_document_link(self, obj: KycProfile) -> str:
