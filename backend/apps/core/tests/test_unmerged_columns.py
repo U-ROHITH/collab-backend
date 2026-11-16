@@ -17,8 +17,9 @@ migration = importlib.import_module("apps.core.migrations.0001_defaults_for_unme
 def _add_unmerged_columns() -> None:
     with connection.cursor() as cur:
         cur.execute('ALTER TABLE "identity_user" ADD COLUMN "email_verified" boolean NOT NULL')
-        cur.execute('ALTER TABLE "creators_creator" ADD COLUMN "social_media_links" jsonb NOT NULL')
-        cur.execute('ALTER TABLE "creators_creator" ADD COLUMN "social_accounts" jsonb NOT NULL')
+        # Fresh databases now have these columns (creators 0005); production had them with no default.
+        cur.execute('ALTER TABLE "creators_creator" ALTER COLUMN "social_media_links" DROP DEFAULT')
+        cur.execute('ALTER TABLE "creators_creator" ALTER COLUMN "social_accounts" DROP DEFAULT')
 
 
 def test_new_users_and_creators_insert_after_defaults_are_set(make_creator) -> None:  # type: ignore[no-untyped-def]
