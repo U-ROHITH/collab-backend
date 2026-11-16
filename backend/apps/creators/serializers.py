@@ -5,9 +5,114 @@ from rest_framework import serializers
 from apps.core.serializers import MoneyField, StrictSerializer
 from apps.creators.models import Creator, CreatorPackage, Platform, RepliesWithin, replies_within_label
 
+STATS_PLATFORMS = ("instagram", "youtube")
+STAT_KEYS = ("followersCount", "engagementRate", "avgViews")
+
 
 def money(paise: int | None) -> dict[str, Any] | None:
     return None if paise is None else {"amount": paise, "currency": "INR"}
+
+
+def normalize_handle(platform: str, value: Any) -> str:
+    """Normalize a pasted platform handle or URL into a bare handle.
+
+    Strips leading '@', query params, hash fragments, and converts profile URLs
+    (e.g. 'https://www.instagram.com/democreator/') into bare handles.
+    """
+    if not value or not isinstance(value, str):
+        return ""
+    val = value.strip()
+    if not val:
+        return ""
+
+    if "instagram.com" in val:
+        val = val.split("instagram.com/")[-1].split("?")[0].split("#")[0].strip("/")
+        if "/" in val:
+            val = val.split("/")[0]
+    elif "youtube.com" in val or "youtu.be" in val:
+        if "youtube.com/" in val:
+            val = val.split("youtube.com/")[-1].split("?")[0].split("#")[0].strip("/")
+        elif "youtu.be/" in val:
+            val = val.split("youtu.be/")[-1].split("?")[0].split("#")[0].strip("/")
+        if val.startswith("c/"):
+            val = val[2:]
+        elif val.startswith("user/"):
+            val = val[5:]
+
+    return val.lstrip("@").strip()
+
+
+def build_platform_url(platform: str, handle: str | None) -> str | None:
+    """Construct full platform profile URL from a bare handle."""
+    if not handle:
+        return None
+    if platform == "instagram":
+        return f"https://www.instagram.com/{handle}/"
+    if platform == "youtube":
+        if handle.startswith("channel/") or handle.startswith("c/"):
+            return f"https://www.youtube.com/{handle}"
+        return f"https://www.youtube.com/@{handle}"
+    return None
+
+
+class PlatformStatsInput(StrictSerializer):
+    """Input for platform stats. Unknown fields are rejected with 400 by StrictSerializer."""
+
+    handle = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    followersCount = serializers.IntegerField(min_value=0, max_value=2_000_000_000, required=False, allow_null=True)  # noqa: N815
+    engagementRate = serializers.FloatField(min_value=0, max_value=100, required=False, allow_null=True)  # noqa: N815
+    avgViews = serializers.IntegerField(min_value=0, max_value=2_000_000_000, required=False, allow_null=True)  # noqa: N815
+
+
+class PlatformInputField(serializers.Field):
+    """Accepts either a string handle ("ananya.eats"), a dict of platform stats
+    ({"handle": "ananya.eats", "followersCount": 30000, ...}), or None to remove."""
+
+    def __init__(self, platform: str, **kwargs: Any) -> None:
+        self.platform = platform
+        super().__init__(**kwargs)
+
+    def to_internal_value(self, data: Any) -> dict[str, Any] | None:
+        if data is None:
+            return None
+        if isinstance(data, str):
+            clean_handle = normalize_handle(self.platform, data)
+            return {"handle": clean_handle}
+        if isinstance(data, dict):
+            serializer = PlatformStatsInput(data=data)
+            if not serializer.is_valid():
+                raise serializers.ValidationError(serializer.errors)
+            val = dict(serializer.validated_data)
+            if "handle" in val and val["handle"] is not None:
+                val["handle"] = normalize_handle(self.platform, val["handle"])
+            return val
+        raise serializers.ValidationError("Must be a string handle, an object with platform stats, or null.")
+
+
+class PlatformsDictField(serializers.Field):
+    """Validates platforms dict where keys must be in STATS_PLATFORMS, and values
+    can be a dict of stats, string handle, or None."""
+
+    def to_internal_value(self, data: Any) -> dict[str, Any] | None:
+        if data is None:
+            return None
+        if not isinstance(data, dict):
+            raise serializers.ValidationError("Must be an object mapping platform names to stats or null.")
+        unknown = sorted(set(data) - set(STATS_PLATFORMS))
+        if unknown:
+            raise serializers.ValidationError(f"Unknown platform(s): {', '.join(unknown)}. Use instagram or youtube.")
+
+        result: dict[str, Any] = {}
+        errors: dict[str, Any] = {}
+        for platform, val in data.items():
+            field = PlatformInputField(platform=platform, allow_null=True)
+            try:
+                result[platform] = field.run_validation(val)
+            except serializers.ValidationError as exc:
+                errors[platform] = exc.detail
+        if errors:
+            raise serializers.ValidationError(errors)
+        return result
 
 
 class PackageOutput(serializers.ModelSerializer):
@@ -51,7 +156,7 @@ class CreatorCardOutput(serializers.ModelSerializer):
     displayName = serializers.CharField(source="display_name")  # noqa: N815
     primaryPlatform = serializers.CharField(source="primary_platform")  # noqa: N815
     repliesWithin = RepliesWithinField(source="replies_within")  # noqa: N815
-    followerCount = serializers.IntegerField(source="follower_count")  # noqa: N815
+    followerCount = serializers.SerializerMethodField()  # noqa: N815
     avatarUrl = serializers.CharField(source="avatar_url")  # noqa: N815
     rating = serializers.FloatField()
     reviewCount = serializers.IntegerField(source="rating_count")  # noqa: N815
@@ -90,6 +195,11 @@ class CreatorCardOutput(serializers.ModelSerializer):
             "platforms",
         )
 
+    # ── helpers ──────────────────────────────────────────────────────────────
+
+    def _social(self, obj: Creator) -> dict:
+        return obj.social_media_links if isinstance(obj.social_media_links, dict) else {}
+
     def get_city(self, obj: Creator) -> str:
         loc = obj.location or ""
         return loc.split(",")[0].strip() if loc else ""
@@ -99,31 +209,61 @@ class CreatorCardOutput(serializers.ModelSerializer):
         return loc.split(",")[1].strip() if "," in loc else ""
 
     def get_languages(self, obj: Creator) -> list[str]:
-        if isinstance(obj.social_media_links, dict):
-            return obj.social_media_links.get("languages", [])
-        return []
+        return self._social(obj).get("languages", [])
 
     def get_instagram(self, obj: Creator) -> str:
-        if isinstance(obj.social_media_links, dict):
-            return obj.social_media_links.get("instagram", "")
-        return ""
+        """Canonical bare handle for instagram, matching platforms.instagram.handle."""
+        links = self._social(obj)
+        val = links.get("instagram")
+        if isinstance(val, dict):
+            val = val.get("handle")
+        return normalize_handle("instagram", val)
 
     def get_youtube(self, obj: Creator) -> str:
-        if isinstance(obj.social_media_links, dict):
-            return obj.social_media_links.get("youtube", "")
-        return ""
+        """Canonical bare handle for youtube, matching platforms.youtube.handle."""
+        links = self._social(obj)
+        val = links.get("youtube")
+        if isinstance(val, dict):
+            val = val.get("handle")
+        return normalize_handle("youtube", val)
 
     def get_platforms(self, obj: Creator) -> dict[str, dict[str, Any]]:
         """Platforms with a handle or any stat. Creator-entered, so `verified` is always false for now."""
-        links = obj.social_media_links if isinstance(obj.social_media_links, dict) else {}
+        links = self._social(obj)
         all_stats = obj.platform_stats if isinstance(obj.platform_stats, dict) else {}
         out: dict[str, dict[str, Any]] = {}
         for platform in STATS_PLATFORMS:
+            raw_handle = links.get(platform, "")
+            if isinstance(raw_handle, dict):
+                raw_handle = raw_handle.get("handle")
+            handle = normalize_handle(platform, raw_handle)
             stats = all_stats.get(platform) or {}
-            entry = {"handle": links.get(platform, "") or ""} | {k: stats.get(k) for k in STAT_KEYS}
-            if entry["handle"] or any(entry[k] is not None for k in STAT_KEYS):
-                out[platform] = entry | {"verified": False}
+            if not isinstance(stats, dict):
+                stats = {}
+            has_stats = any(stats.get(k) is not None for k in STAT_KEYS)
+            if handle or has_stats:
+                out[platform] = {
+                    "handle": handle,
+                    "url": build_platform_url(platform, handle),
+                    "followersCount": stats.get("followersCount"),
+                    "avgViews": stats.get("avgViews"),
+                    "engagementRate": stats.get("engagementRate"),
+                    "verified": False,
+                }
         return out
+
+    def get_followerCount(self, obj: Creator) -> int | None:  # noqa: N802
+        """Derived from primary platform stats, fallback to other platforms, fallback to follower_count field."""
+        if isinstance(obj.platform_stats, dict):
+            primary = obj.primary_platform
+            primary_stats = obj.platform_stats.get(primary)
+            if isinstance(primary_stats, dict) and primary_stats.get("followersCount") is not None:
+                return primary_stats["followersCount"]
+            for p in STATS_PLATFORMS:
+                stats = obj.platform_stats.get(p)
+                if isinstance(stats, dict) and stats.get("followersCount") is not None:
+                    return stats["followersCount"]
+        return obj.follower_count
 
     def get_startingPrice(self, obj: Creator) -> dict[str, Any] | None:  # noqa: N802
         return money(getattr(obj, "starting_price", None))
@@ -157,20 +297,6 @@ class CreatorSelfOutput(CreatorCardOutput):
         fields = (*CreatorCardOutput.Meta.fields, "approvalStatus", "packages", "gallery")
 
 
-STATS_PLATFORMS = ("instagram", "youtube")
-STAT_KEYS = ("followersCount", "engagementRate", "avgViews")
-
-
-class PlatformStatsInput(StrictSerializer):
-    handle = serializers.CharField(max_length=120, required=False, allow_blank=True)
-    followersCount = serializers.IntegerField(min_value=0, max_value=2_000_000_000, required=False, allow_null=True)  # noqa: N815
-    engagementRate = serializers.FloatField(min_value=0, max_value=100, required=False, allow_null=True)  # noqa: N815
-    avgViews = serializers.IntegerField(min_value=0, max_value=2_000_000_000, required=False, allow_null=True)  # noqa: N815
-
-    def validate_handle(self, value: str) -> str:
-        return value.strip().lstrip("@")
-
-
 class CreatorProfileInput(StrictSerializer):
     displayName = serializers.CharField(max_length=80, required=False)  # noqa: N815
     bio = serializers.CharField(max_length=2000, required=False, allow_blank=True)
@@ -183,20 +309,15 @@ class CreatorProfileInput(StrictSerializer):
     repliesWithin = RepliesWithinField(required=False)  # noqa: N815
     dob = serializers.DateField(required=False, allow_null=True)
     gender = serializers.CharField(max_length=40, required=False, allow_blank=True)
-    instagram = serializers.CharField(max_length=120, required=False, allow_blank=True)
-    youtube = serializers.CharField(max_length=120, required=False, allow_blank=True)
-    platforms = serializers.DictField(
-        child=PlatformStatsInput(allow_null=True),
+    followerCount = serializers.IntegerField(min_value=0, max_value=2_000_000_000, required=False, allow_null=True)  # noqa: N815
+    instagram = PlatformInputField(platform="instagram", required=False, allow_null=True)
+    youtube = PlatformInputField(platform="youtube", required=False, allow_null=True)
+    platforms = PlatformsDictField(
         required=False,
+        allow_null=True,
         help_text="{instagram|youtube: {handle, followersCount, engagementRate, avgViews} | null}. "
         "Merged per platform; null removes that platform.",
     )
-
-    def validate_platforms(self, value: dict[str, Any]) -> dict[str, Any]:
-        unknown = sorted(set(value) - set(STATS_PLATFORMS))
-        if unknown:
-            raise serializers.ValidationError(f"Unknown platform(s): {', '.join(unknown)}. Use instagram or youtube.")
-        return value
 
 
 class CreatorSearchParams(StrictSerializer):

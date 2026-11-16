@@ -1,7 +1,7 @@
 """Per-platform handle + stats: saved via PATCH /v1/creators/me/, shown to brands on list and detail.
 
-Until Instagram/YouTube connect exists these numbers are creator-entered, so each platform says verified=false
-and the top-level `verified` / `followerCount` (reserved for synced data) are left alone.
+Until Instagram/YouTube connect exists these numbers are creator-entered, so each platform says verified=false,
+and the top-level `followerCount` is kept consistent with the primary platform's stats.
 """
 
 from collections.abc import Callable
@@ -31,6 +31,7 @@ def test_creator_saves_platforms_and_brands_see_them_on_list_and_detail(creator:
     expected = {
         "instagram": {
             "handle": "ananya.eats",
+            "url": "https://www.instagram.com/ananya.eats/",
             "followersCount": 30000,
             "engagementRate": 4.2,
             "avgViews": 8000,
@@ -38,6 +39,7 @@ def test_creator_saves_platforms_and_brands_see_them_on_list_and_detail(creator:
         },
         "youtube": {
             "handle": "AnanyaCooks",
+            "url": "https://www.youtube.com/@AnanyaCooks",
             "followersCount": 20000,
             "engagementRate": 2.8,
             "avgViews": 15000,
@@ -50,10 +52,10 @@ def test_creator_saves_platforms_and_brands_see_them_on_list_and_detail(creator:
     assert listed[0]["platforms"] == expected
     detail = anon.get(f"/v1/creators/{listed[0]['id']}/").json()["data"]
     assert detail["platforms"] == expected
-    # flat handles stay in sync for older screens
+    # flat handles stay in sync with bare handles
     assert detail["instagram"] == "ananya.eats" and detail["youtube"] == "AnanyaCooks"
-    # self-reported numbers never mark the profile verified or fill the synced follower count
-    assert detail["verified"] is False and detail["followerCount"] is None
+    # followerCount is kept consistent with primary platform's followersCount
+    assert detail["verified"] is False and detail["followerCount"] == 30000
 
 
 def test_partial_update_merges_per_platform_and_null_removes_one(creator: APIClient) -> None:
@@ -65,6 +67,7 @@ def test_partial_update_merges_per_platform_and_null_removes_one(creator: APICli
     assert platforms["instagram"]["followersCount"] == 31000
     assert platforms["instagram"]["engagementRate"] == 4.2  # untouched fields kept
     assert resp.json()["data"]["youtube"] == ""
+    assert resp.json()["data"]["followerCount"] == 31000
 
 
 def test_flat_handle_alone_shows_as_a_platform(creator: APIClient) -> None:
@@ -72,11 +75,38 @@ def test_flat_handle_alone_shows_as_a_platform(creator: APIClient) -> None:
     assert resp.json()["data"]["platforms"] == {
         "instagram": {
             "handle": "ananya.eats",
+            "url": "https://www.instagram.com/ananya.eats/",
             "followersCount": None,
             "engagementRate": None,
             "avgViews": None,
             "verified": False,
         }
+    }
+
+
+def test_top_level_instagram_with_stats_and_pasted_url(creator: APIClient) -> None:
+    resp = _patch(
+        creator,
+        {
+            "instagram": {
+                "handle": "https://www.instagram.com/democreator/",
+                "followersCount": 25000,
+                "avgViews": 5000,
+                "engagementRate": 3.5,
+            }
+        },
+    )
+    assert resp.status_code == 200, resp.json()
+    data = resp.json()["data"]
+    assert data["instagram"] == "democreator"
+    assert data["followerCount"] == 25000
+    assert data["platforms"]["instagram"] == {
+        "handle": "democreator",
+        "url": "https://www.instagram.com/democreator/",
+        "followersCount": 25000,
+        "avgViews": 5000,
+        "engagementRate": 3.5,
+        "verified": False,
     }
 
 
@@ -100,3 +130,11 @@ def test_bad_platform_input_is_a_400_on_the_right_field(creator: APIClient, body
     resp = _patch(creator, {"platforms": body})
     assert resp.status_code == 400, resp.json()
     assert field in str(resp.json()["error"]["details"])
+
+
+def test_top_level_unknown_nested_fields_rejected_400(creator: APIClient) -> None:
+    resp = _patch(creator, {"instagram": {"handle": "@test", "followers": 12000, "er": 4.2}})
+    assert resp.status_code == 400, resp.json()
+    details = resp.json()["error"]["details"]["instagram"]
+    assert "followers" in details
+    assert "er" in details

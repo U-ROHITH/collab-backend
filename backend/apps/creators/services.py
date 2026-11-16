@@ -29,6 +29,7 @@ _PACKAGE_FIELDS = {
     "deliveryDays": "delivery_days",
     "active": "active",
 }
+_SENTINEL = object()
 
 
 def _unique_slug(name: str) -> str:
@@ -49,45 +50,6 @@ def create_catalogue_creator(*, actor: User, display_name: str, **fields: Any) -
     return creator
 
 
-def update_creator_profile(*, creator: Creator, data: dict[str, Any]) -> Creator:
-    data = dict(data)
-    city = data.pop("city", None)
-    region = data.pop("region", None)
-    if city or region:
-        parts = [p.strip() for p in (city, region) if p and p.strip()]
-        data["location"] = ", ".join(parts)
-
-    instagram = data.pop("instagram", None)
-    youtube = data.pop("youtube", None)
-    languages = data.pop("languages", None)
-    platforms = data.pop("platforms", None)
-
-    social_links = dict(creator.social_media_links or {})
-    if instagram is not None:
-        social_links["instagram"] = instagram
-    if youtube is not None:
-        social_links["youtube"] = youtube
-    if languages is not None:
-        social_links["languages"] = languages
-    if platforms:
-        creator.platform_stats = _merge_platforms(creator, social_links, platforms)
-    creator.social_media_links = social_links
-
-    changes = {_PROFILE_FIELDS[k]: v for k, v in data.items() if k in _PROFILE_FIELDS}
-    for field, value in changes.items():
-        setattr(creator, field, value)
-
-    update_fields = list(changes.keys())
-    if "social_media_links" not in update_fields:
-        update_fields.append("social_media_links")
-    if platforms:
-        update_fields.append("platform_stats")
-    update_fields.append("updated_at")
-
-    creator.save(update_fields=update_fields)
-    return creator
-
-
 def _merge_platforms(creator: Creator, social_links: dict[str, Any], platforms: dict[str, Any]) -> dict[str, Any]:
     """Merge per platform: given fields overwrite, others are kept; None removes the platform (handle too)."""
     stats = {k: dict(v) for k, v in (creator.platform_stats or {}).items() if isinstance(v, dict)}
@@ -101,6 +63,84 @@ def _merge_platforms(creator: Creator, social_links: dict[str, Any], platforms: 
             social_links[platform] = entry.pop("handle")
         stats[platform] = stats.get(platform, {}) | entry
     return stats
+
+
+def update_creator_profile(*, creator: Creator, data: dict[str, Any]) -> Creator:
+    data = dict(data)
+    city = data.pop("city", None)
+    region = data.pop("region", None)
+    if city or region:
+        parts = [p.strip() for p in (city, region) if p and p.strip()]
+        data["location"] = ", ".join(parts)
+
+    instagram = data.pop("instagram", _SENTINEL)
+    youtube = data.pop("youtube", _SENTINEL)
+    languages = data.pop("languages", _SENTINEL)
+    platforms = data.pop("platforms", _SENTINEL)
+    explicit_follower_count = data.pop("followerCount", _SENTINEL)
+
+    social_links = dict(creator.social_media_links or {})
+    if languages is not _SENTINEL:
+        social_links["languages"] = languages
+
+    incoming_platforms: dict[str, Any] = {}
+    if instagram is not _SENTINEL:
+        incoming_platforms["instagram"] = instagram
+    if youtube is not _SENTINEL:
+        incoming_platforms["youtube"] = youtube
+    if platforms is not _SENTINEL and isinstance(platforms, dict):
+        for p, p_data in platforms.items():
+            if p in incoming_platforms and incoming_platforms[p] is not None and p_data is not None:
+                incoming_platforms[p] = {**incoming_platforms[p], **p_data}
+            else:
+                incoming_platforms[p] = p_data
+
+    stats_changed = False
+    if incoming_platforms:
+        creator.platform_stats = _merge_platforms(creator, social_links, incoming_platforms)
+        stats_changed = True
+
+    creator.social_media_links = social_links
+
+    # Sync follower_count with platform stats or explicit followerCount
+    follower_count_changed = False
+    primary = data.get("primaryPlatform") or creator.primary_platform
+    derived_follower_count = None
+    if isinstance(creator.platform_stats, dict):
+        primary_stats = creator.platform_stats.get(primary)
+        if isinstance(primary_stats, dict) and primary_stats.get("followersCount") is not None:
+            derived_follower_count = primary_stats["followersCount"]
+        else:
+            for p in ("instagram", "youtube"):
+                st = creator.platform_stats.get(p)
+                if isinstance(st, dict) and st.get("followersCount") is not None:
+                    derived_follower_count = st["followersCount"]
+                    break
+
+    if derived_follower_count is not None:
+        if creator.follower_count != derived_follower_count:
+            creator.follower_count = derived_follower_count
+            follower_count_changed = True
+    elif explicit_follower_count is not _SENTINEL:
+        if creator.follower_count != explicit_follower_count:
+            creator.follower_count = explicit_follower_count
+            follower_count_changed = True
+
+    changes = {_PROFILE_FIELDS[k]: v for k, v in data.items() if k in _PROFILE_FIELDS}
+    for field, value in changes.items():
+        setattr(creator, field, value)
+
+    update_fields = list(changes.keys())
+    if "social_media_links" not in update_fields:
+        update_fields.append("social_media_links")
+    if stats_changed and "platform_stats" not in update_fields:
+        update_fields.append("platform_stats")
+    if follower_count_changed and "follower_count" not in update_fields:
+        update_fields.append("follower_count")
+    update_fields.append("updated_at")
+
+    creator.save(update_fields=update_fields)
+    return creator
 
 
 def set_approval(*, actor: User, creator_id: UUID, status: str) -> Creator:

@@ -52,7 +52,7 @@ Deliverables have no status of their own; the order status says where the work i
 - **Guest view:** `GET /v1/creators/`, `GET /v1/creators/{id}/` and `GET /v1/campaigns/` work without a token. Creator cards never include contact, payout or approval details. Guests (and users mid-signup or awaiting creator approval) get open campaigns with `brief: null` and `usageRights: null`. Campaign detail, bids and every write still need a signed-in user.
 - **Google sign-in:** `POST /v1/auth/google/` `{idToken, role?}` → `{access, refresh, user}`, the same shape as OTP verify. `idToken` is the Google Identity Services credential for client `1042168589486-k7e30v1tao2ooepsb5lp339m7anlvq44.apps.googleusercontent.com`. Accounts match on the Google-verified email, so an existing OTP account signs in to the same account. `role` (`brand`/`creator`) only applies to an account with no role yet; otherwise read `user.role`. Errors: `401 GOOGLE_TOKEN_INVALID`, `401 GOOGLE_EMAIL_UNVERIFIED`.
 - **KYC:** `user.kycStatus` on `/v1/auth/me/` (and every auth response) is `not_started | in_progress | pending | verified | rejected`. Steps are under `/v1/kyc/` (below). **Creating a campaign, placing a bid, sending an offer, accepting an offer and cart checkout return `403 KYC_REQUIRED` until KYC is `verified`.** Declining an offer doesn't need KYC.
-- **Platform stats:** `PATCH /v1/creators/me/` accepts `platforms: {instagram|youtube: {handle?, followersCount?, engagementRate?, avgViews?} | null}` (merged per platform; `null` removes it; a leading `@` on handles is dropped). `GET /v1/creators/`, `/v1/creators/{id}/` and `/me/` return `platforms: {instagram?: {handle, followersCount, engagementRate, avgViews, verified}, youtube?: {...}}` (only platforms with data; `{}` if none). These are creator-entered, so `verified` is always `false` until Instagram/YouTube connect ships; top-level `verified` and `followerCount` stay reserved for synced data. Flat `instagram` / `youtube` handles are still returned and kept in sync.
+- **Platform stats:** `PATCH /v1/creators/me/` accepts platform stats either top-level (`instagram`, `youtube`) or inside `platforms: {instagram|youtube: {handle?, followersCount?, engagementRate?, avgViews?} | null}`. Handles are normalized: leading `@` is stripped, pasted profile URLs (e.g. `https://www.instagram.com/democreator/`) become bare handles, and `url` is exposed per platform. Unknown nested fields (e.g. `followers`, `er`) return `400 VALIDATION_ERROR` naming the invalid field. `engagementRate` is a percentage (`0.0` - `100.0`). Top-level `followerCount` is kept consistent with primary platform's `followersCount`. Flat `instagram` / `youtube` string handles are also returned and kept in sync with `platforms.<platform>.handle`. Every platform currently returns `verified: false` until social account OAuth is connected.
 - **Earnings:** `GET /v1/creators/me/earnings/` → `{inEscrow, earned, tdsDeducted, ordersInEscrow, ordersEarned, payoutsEnabled}`. **`payoutsEnabled` is `false` for launch: hide withdraw/payout-history screens.** "Earned" means the brand approved the work. Money doesn't reach a bank until Razorpay payouts are built.
 - **Fix:** a bad or expired refresh token now returns `401 AUTH_INVALID` with "Your session has expired or is invalid. Please sign in again." (no Python debug text).
 
@@ -97,6 +97,89 @@ Deliverables have no status of their own; the order status says where the work i
 | GET | `/v1/creators/{id}/` | **public**: profile + active packages |
 | GET | `/v1/creators/me/earnings/` | creator: `{inEscrow, earned, tdsDeducted, ordersInEscrow, ordersEarned, payoutsEnabled}` |
 | GET | `/v1/creators/{id}/reviews/` | brand/creator |
+
+### Creator Profile Body Shapes
+
+#### `PATCH /v1/creators/me/` Request Body
+```json
+{
+  "displayName": "Ananya Iyer",
+  "bio": "Honest skincare for humid weather.",
+  "categories": ["Skincare", "Beauty"],
+  "languages": ["English", "Telugu"],
+  "city": "Hyderabad",
+  "region": "Telangana",
+  "primaryPlatform": "instagram",
+  "dob": "1998-04-12",
+  "gender": "Woman",
+  "instagram": {
+    "handle": "@ananyamakes",
+    "followersCount": 30000,
+    "avgViews": 8000,
+    "engagementRate": 4.2
+  },
+  "youtube": {
+    "handle": "https://www.youtube.com/@AnanyaCooks",
+    "followersCount": 20000,
+    "avgViews": 15000,
+    "engagementRate": 2.8
+  }
+}
+```
+*Notes on PATCH:*
+- `instagram` and `youtube` accept:
+  - An object `{handle?, followersCount?, avgViews?, engagementRate?}`.
+  - Or a bare string handle (e.g. `"ananyamakes"`).
+  - Or a pasted profile URL (e.g. `"https://www.instagram.com/ananyamakes/"`), which is automatically normalized to `"ananyamakes"`.
+  - Or `null` to remove the platform.
+- Or use the `platforms: {instagram: {...}, youtube: {...}}` wrapper.
+- Unknown nested fields (e.g. `followers`, `er`, `likes`) trigger `400 VALIDATION_ERROR` naming the field.
+- `followerCount` is computed/derived from the primary platform's `followersCount` and kept in sync on the creator profile.
+
+#### `GET /v1/creators/me/`, `GET /v1/creators/{id}/`, `GET /v1/creators/` Response Data
+```json
+{
+  "id": "01a1e371-f127-7780-98d0-4ae902676a98",
+  "slug": "ananya-iyer-67c664",
+  "displayName": "Ananya Iyer",
+  "bio": "Honest skincare for humid weather.",
+  "categories": ["Skincare", "Beauty"],
+  "location": "Hyderabad, Telangana",
+  "city": "Hyderabad",
+  "region": "Telangana",
+  "primaryPlatform": "instagram",
+  "repliesWithin": "24h",
+  "verified": false,
+  "followerCount": 30000,
+  "avatarUrl": "https://...",
+  "rating": null,
+  "reviewCount": 0,
+  "startingPrice": { "amount": 500000, "currency": "INR" },
+  "dob": "1998-04-12",
+  "gender": "Woman",
+  "languages": ["English", "Telugu"],
+  "instagram": "ananyamakes",
+  "youtube": "AnanyaCooks",
+  "platforms": {
+    "instagram": {
+      "handle": "ananyamakes",
+      "url": "https://www.instagram.com/ananyamakes/",
+      "followersCount": 30000,
+      "avgViews": 8000,
+      "engagementRate": 4.2,
+      "verified": false
+    },
+    "youtube": {
+      "handle": "AnanyaCooks",
+      "url": "https://www.youtube.com/@AnanyaCooks",
+      "followersCount": 20000,
+      "avgViews": 15000,
+      "engagementRate": 2.8,
+      "verified": false
+    }
+  }
+}
+```
 
 ## Brands, lists, cart
 | Method | Path | Who |
