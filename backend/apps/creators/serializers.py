@@ -61,6 +61,7 @@ class CreatorCardOutput(serializers.ModelSerializer):
     languages = serializers.SerializerMethodField()
     instagram = serializers.SerializerMethodField()
     youtube = serializers.SerializerMethodField()
+    platforms = serializers.SerializerMethodField()
 
     class Meta:
         model = Creator
@@ -86,6 +87,7 @@ class CreatorCardOutput(serializers.ModelSerializer):
             "languages",
             "instagram",
             "youtube",
+            "platforms",
         )
 
     def get_city(self, obj: Creator) -> str:
@@ -110,6 +112,18 @@ class CreatorCardOutput(serializers.ModelSerializer):
         if isinstance(obj.social_media_links, dict):
             return obj.social_media_links.get("youtube", "")
         return ""
+
+    def get_platforms(self, obj: Creator) -> dict[str, dict[str, Any]]:
+        """Platforms with a handle or any stat. Creator-entered, so `verified` is always false for now."""
+        links = obj.social_media_links if isinstance(obj.social_media_links, dict) else {}
+        all_stats = obj.platform_stats if isinstance(obj.platform_stats, dict) else {}
+        out: dict[str, dict[str, Any]] = {}
+        for platform in STATS_PLATFORMS:
+            stats = all_stats.get(platform) or {}
+            entry = {"handle": links.get(platform, "") or ""} | {k: stats.get(k) for k in STAT_KEYS}
+            if entry["handle"] or any(entry[k] is not None for k in STAT_KEYS):
+                out[platform] = entry | {"verified": False}
+        return out
 
     def get_startingPrice(self, obj: Creator) -> dict[str, Any] | None:  # noqa: N802
         return money(getattr(obj, "starting_price", None))
@@ -143,6 +157,20 @@ class CreatorSelfOutput(CreatorCardOutput):
         fields = (*CreatorCardOutput.Meta.fields, "approvalStatus", "packages", "gallery")
 
 
+STATS_PLATFORMS = ("instagram", "youtube")
+STAT_KEYS = ("followersCount", "engagementRate", "avgViews")
+
+
+class PlatformStatsInput(StrictSerializer):
+    handle = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    followersCount = serializers.IntegerField(min_value=0, max_value=2_000_000_000, required=False, allow_null=True)  # noqa: N815
+    engagementRate = serializers.FloatField(min_value=0, max_value=100, required=False, allow_null=True)  # noqa: N815
+    avgViews = serializers.IntegerField(min_value=0, max_value=2_000_000_000, required=False, allow_null=True)  # noqa: N815
+
+    def validate_handle(self, value: str) -> str:
+        return value.strip().lstrip("@")
+
+
 class CreatorProfileInput(StrictSerializer):
     displayName = serializers.CharField(max_length=80, required=False)  # noqa: N815
     bio = serializers.CharField(max_length=2000, required=False, allow_blank=True)
@@ -157,6 +185,18 @@ class CreatorProfileInput(StrictSerializer):
     gender = serializers.CharField(max_length=40, required=False, allow_blank=True)
     instagram = serializers.CharField(max_length=120, required=False, allow_blank=True)
     youtube = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    platforms = serializers.DictField(
+        child=PlatformStatsInput(allow_null=True),
+        required=False,
+        help_text="{instagram|youtube: {handle, followersCount, engagementRate, avgViews} | null}. "
+        "Merged per platform; null removes that platform.",
+    )
+
+    def validate_platforms(self, value: dict[str, Any]) -> dict[str, Any]:
+        unknown = sorted(set(value) - set(STATS_PLATFORMS))
+        if unknown:
+            raise serializers.ValidationError(f"Unknown platform(s): {', '.join(unknown)}. Use instagram or youtube.")
+        return value
 
 
 class CreatorSearchParams(StrictSerializer):

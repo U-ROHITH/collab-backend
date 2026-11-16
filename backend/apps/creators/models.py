@@ -53,6 +53,9 @@ class Creator(BaseModel):
     gender = models.CharField(max_length=40, blank=True)
     social_media_links = models.JSONField(default=dict, blank=True)
     social_accounts = models.JSONField(default=list, blank=True)
+    # {platform: {followersCount, engagementRate, avgViews}} entered by the creator; handles live in
+    # social_media_links. Not verified data: `verified` / `follower_count` stay reserved for social sync.
+    platform_stats = models.JSONField(default=dict, blank=True)
     rating_sum = models.PositiveIntegerField(default=0)
     rating_count = models.PositiveIntegerField(default=0)
 

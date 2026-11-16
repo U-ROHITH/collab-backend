@@ -52,6 +52,7 @@ Deliverables have no status of their own; the order status says where the work i
 - **Guest view:** `GET /v1/creators/`, `GET /v1/creators/{id}/` and `GET /v1/campaigns/` work without a token. Creator cards never include contact, payout or approval details. Guests (and users mid-signup or awaiting creator approval) get open campaigns with `brief: null` and `usageRights: null`. Campaign detail, bids and every write still need a signed-in user.
 - **Google sign-in:** `POST /v1/auth/google/` `{idToken, role?}` → `{access, refresh, user}`, the same shape as OTP verify. `idToken` is the Google Identity Services credential for client `1042168589486-k7e30v1tao2ooepsb5lp339m7anlvq44.apps.googleusercontent.com`. Accounts match on the Google-verified email, so an existing OTP account signs in to the same account. `role` (`brand`/`creator`) only applies to an account with no role yet; otherwise read `user.role`. Errors: `401 GOOGLE_TOKEN_INVALID`, `401 GOOGLE_EMAIL_UNVERIFIED`.
 - **KYC:** `user.kycStatus` on `/v1/auth/me/` (and every auth response) is `not_started | in_progress | pending | verified | rejected`. Steps are under `/v1/kyc/` (below). **Creating a campaign, placing a bid, sending an offer, accepting an offer and cart checkout return `403 KYC_REQUIRED` until KYC is `verified`.** Declining an offer doesn't need KYC.
+- **Platform stats:** `PATCH /v1/creators/me/` accepts `platforms: {instagram|youtube: {handle?, followersCount?, engagementRate?, avgViews?} | null}` (merged per platform; `null` removes it; a leading `@` on handles is dropped). `GET /v1/creators/`, `/v1/creators/{id}/` and `/me/` return `platforms: {instagram?: {handle, followersCount, engagementRate, avgViews, verified}, youtube?: {...}}` (only platforms with data; `{}` if none). These are creator-entered, so `verified` is always `false` until Instagram/YouTube connect ships; top-level `verified` and `followerCount` stay reserved for synced data. Flat `instagram` / `youtube` handles are still returned and kept in sync.
 - **Earnings:** `GET /v1/creators/me/earnings/` → `{inEscrow, earned, tdsDeducted, ordersInEscrow, ordersEarned, payoutsEnabled}`. **`payoutsEnabled` is `false` for launch: hide withdraw/payout-history screens.** "Earned" means the brand approved the work. Money doesn't reach a bank until Razorpay payouts are built.
 - **Fix:** a bad or expired refresh token now returns `401 AUTH_INVALID` with "Your session has expired or is invalid. Please sign in again." (no Python debug text).
 
@@ -89,7 +90,7 @@ Deliverables have no status of their own; the order status says where the work i
 ## Creators
 | Method | Path | Who |
 |---|---|---|
-| GET/PATCH | `/v1/creators/me/` | creator (`displayName, bio, categories[], location, primaryPlatform, repliesWithin`) |
+| GET/PATCH | `/v1/creators/me/` | creator (`displayName, bio, categories[], location, primaryPlatform, repliesWithin, instagram, youtube, platforms`) |
 | GET/POST | `/v1/creators/me/packages/` | creator (`title, platform, deliverables, price, deliveryDays`) |
 | PATCH/DELETE | `/v1/creators/me/packages/{id}/` | creator (DELETE = deactivate) |
 | GET | `/v1/creators/?q=&category=&location=&platform=&verified=&minPrice=&maxPrice=&minFollowers=` | **public**: approved creators only |

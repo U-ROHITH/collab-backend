@@ -60,6 +60,7 @@ def update_creator_profile(*, creator: Creator, data: dict[str, Any]) -> Creator
     instagram = data.pop("instagram", None)
     youtube = data.pop("youtube", None)
     languages = data.pop("languages", None)
+    platforms = data.pop("platforms", None)
 
     social_links = dict(creator.social_media_links or {})
     if instagram is not None:
@@ -68,6 +69,8 @@ def update_creator_profile(*, creator: Creator, data: dict[str, Any]) -> Creator
         social_links["youtube"] = youtube
     if languages is not None:
         social_links["languages"] = languages
+    if platforms:
+        creator.platform_stats = _merge_platforms(creator, social_links, platforms)
     creator.social_media_links = social_links
 
     changes = {_PROFILE_FIELDS[k]: v for k, v in data.items() if k in _PROFILE_FIELDS}
@@ -77,10 +80,27 @@ def update_creator_profile(*, creator: Creator, data: dict[str, Any]) -> Creator
     update_fields = list(changes.keys())
     if "social_media_links" not in update_fields:
         update_fields.append("social_media_links")
+    if platforms:
+        update_fields.append("platform_stats")
     update_fields.append("updated_at")
 
     creator.save(update_fields=update_fields)
     return creator
+
+
+def _merge_platforms(creator: Creator, social_links: dict[str, Any], platforms: dict[str, Any]) -> dict[str, Any]:
+    """Merge per platform: given fields overwrite, others are kept; None removes the platform (handle too)."""
+    stats = {k: dict(v) for k, v in (creator.platform_stats or {}).items() if isinstance(v, dict)}
+    for platform, entry in platforms.items():
+        if entry is None:
+            stats.pop(platform, None)
+            social_links[platform] = ""
+            continue
+        entry = dict(entry)
+        if "handle" in entry:
+            social_links[platform] = entry.pop("handle")
+        stats[platform] = stats.get(platform, {}) | entry
+    return stats
 
 
 def set_approval(*, actor: User, creator_id: UUID, status: str) -> Creator:
