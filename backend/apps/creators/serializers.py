@@ -1,5 +1,7 @@
 from typing import Any
 
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.validators import URLValidator
 from drf_spectacular.extensions import OpenApiSerializerFieldExtension
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
@@ -289,7 +291,6 @@ class CreatorCardOutput(serializers.ModelSerializer):
             "rating",
             "reviewCount",
             "startingPrice",
-            "dob",
             "gender",
             "languages",
             "instagram",
@@ -410,7 +411,8 @@ class CreatorSelfOutput(CreatorCardOutput):
     gallery = GalleryItemOutput(source="media", many=True, read_only=True)
 
     class Meta(CreatorCardOutput.Meta):
-        fields = (*CreatorCardOutput.Meta.fields, "approvalStatus", "packages", "gallery")
+        # dob is personal data: only the creator sees it, never the public card or detail.
+        fields = (*CreatorCardOutput.Meta.fields, "dob", "approvalStatus", "packages", "gallery")
 
 
 class CreatorProfileInput(StrictSerializer):
@@ -418,15 +420,15 @@ class CreatorProfileInput(StrictSerializer):
     bio = serializers.CharField(max_length=2000, required=False, allow_blank=True)
     categories = serializers.ListField(child=serializers.CharField(max_length=40), max_length=10, required=False)
     languages = serializers.ListField(child=serializers.CharField(max_length=40), required=False)
-    location = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    location = serializers.CharField(max_length=80, required=False, allow_blank=True)
     city = serializers.CharField(max_length=80, required=False, allow_blank=True)
     region = serializers.CharField(max_length=80, required=False, allow_blank=True)
     primaryPlatform = serializers.ChoiceField(choices=Platform.choices, required=False)  # noqa: N815
     repliesWithin = RepliesWithinField(required=False)  # noqa: N815
     dob = serializers.DateField(required=False, allow_null=True)
     gender = serializers.CharField(max_length=40, required=False, allow_blank=True)
-    avatarUrl = serializers.CharField(max_length=600, required=False, allow_blank=True, allow_null=True)  # noqa: N815
-    avatar = serializers.CharField(max_length=600, required=False, allow_blank=True, allow_null=True)
+    avatarUrl = serializers.CharField(max_length=500, required=False, allow_blank=True, allow_null=True)  # noqa: N815
+    avatar = serializers.CharField(max_length=500, required=False, allow_blank=True, allow_null=True)
     avatarUploadId = serializers.UUIDField(required=False, allow_null=True)  # noqa: N815
     followerCount = FormIntegerField(min_value=0, max_value=2_000_000_000, required=False, allow_null=True)  # noqa: N815
     instagram = PlatformInputField(platform="instagram", required=False, allow_null=True)
@@ -437,6 +439,29 @@ class CreatorProfileInput(StrictSerializer):
         help_text="{instagram|youtube: {handle, followersCount, engagementRate, avgViews} | null}. "
         "Merged per platform; null removes that platform.",
     )
+
+    def _clean_avatar(self, value: str | None) -> str:
+        """null or "" removes the photo. Otherwise an https URL: it's shown to everyone as an image/link."""
+        if not value:
+            return ""
+        value = value.strip()
+        try:
+            URLValidator(schemes=["https"])(value)
+        except DjangoValidationError:
+            raise serializers.ValidationError("Use an https:// image URL.") from None
+        return value
+
+    def validate_avatarUrl(self, value: str | None) -> str:  # noqa: N802
+        return self._clean_avatar(value)
+
+    def validate_avatar(self, value: str | None) -> str:
+        return self._clean_avatar(value)
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        city, region = attrs.get("city"), attrs.get("region")
+        if city is not None and region is not None and len(f"{city.strip()}, {region.strip()}") > 80:
+            raise serializers.ValidationError({"location": ["City and region together must be under 80 characters."]})
+        return attrs
 
 
 class CreatorSearchParams(StrictSerializer):

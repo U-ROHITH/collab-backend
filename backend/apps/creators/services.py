@@ -79,9 +79,17 @@ def update_creator_profile(*, creator: Creator, data: dict[str, Any]) -> Creator
 
     city = data.pop("city", None)
     region = data.pop("region", None)
-    if city or region:
-        parts = [p.strip() for p in (city, region) if p and p.strip()]
-        data["location"] = ", ".join(parts)
+    if city is not None or region is not None:
+        # Changing one half keeps the other; sending "" clears that half.
+        old_city, _, old_region = (creator.location or "").partition(",")
+        new_city = (city if city is not None else old_city).strip()
+        new_region = (region if region is not None else old_region).strip()
+        location = ", ".join(p for p in (new_city, new_region) if p)
+        if len(location) > 80:
+            from rest_framework.exceptions import ValidationError
+
+            raise ValidationError({"location": ["City and region together must be under 80 characters."]})
+        data["location"] = location
 
     instagram = data.pop("instagram", _SENTINEL)
     youtube = data.pop("youtube", _SENTINEL)
@@ -135,6 +143,10 @@ def update_creator_profile(*, creator: Creator, data: dict[str, Any]) -> Creator
         if creator.follower_count != explicit_follower_count:
             creator.follower_count = explicit_follower_count
             follower_count_changed = True
+    elif stats_changed and creator.follower_count is not None:
+        # The stats it came from were removed: don't keep showing (and filtering on) the old number.
+        creator.follower_count = None
+        follower_count_changed = True
 
     changes = {_PROFILE_FIELDS[k]: v for k, v in data.items() if k in _PROFILE_FIELDS}
     for field, value in changes.items():

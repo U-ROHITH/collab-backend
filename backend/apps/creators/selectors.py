@@ -7,10 +7,9 @@ from apps.creators.models import ApprovalStatus, Creator, CreatorPackage
 
 def _creator_detail_queryset() -> QuerySet[Creator]:
     active_packages = CreatorPackage.objects.filter(active=True)
-    return (
-        Creator.objects.annotate(starting_price=Min("packages__price_paise", filter=Q(packages__active=True)))
-        .prefetch_related(Prefetch("packages", queryset=active_packages, to_attr="active_packages"), "media")
-    )
+    return Creator.objects.annotate(
+        starting_price=Min("packages__price_paise", filter=Q(packages__active=True))
+    ).prefetch_related(Prefetch("packages", queryset=active_packages, to_attr="active_packages"), "media")
 
 
 def public_creators() -> QuerySet[Creator]:
@@ -23,7 +22,11 @@ def search_creators(params: dict[str, Any]) -> QuerySet[Creator]:
     if q := params.get("q"):
         qs = qs.filter(Q(display_name__icontains=q) | Q(bio__icontains=q) | Q(location__icontains=q))
     if category := params.get("category"):
-        qs = qs.filter(categories__icontains=category)
+        # Whole-category, case-insensitive match ("art" must not match "Smart Home").
+        qs = qs.extra(  # noqa: S610 - parameterised
+            where=["lower(%s) IN (SELECT lower(c) FROM unnest(creators_creator.categories) AS c)"],
+            params=[category],
+        )
     if location := params.get("location"):
         qs = qs.filter(location__icontains=location)
     if platform := params.get("platform"):

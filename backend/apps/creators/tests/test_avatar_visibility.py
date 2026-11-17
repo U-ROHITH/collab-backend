@@ -127,6 +127,7 @@ def test_pending_creator_visibility_rules(
     )
     admin_client = APIClient()
     from apps.identity.services import issue_admin_tokens
+
     admin_client.credentials(HTTP_AUTHORIZATION=f"Bearer {issue_admin_tokens(admin_user).access}")
     admin_resp = admin_client.get(f"/v1/creators/{creator_id}/")
     assert admin_resp.status_code == 200
