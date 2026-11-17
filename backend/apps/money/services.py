@@ -118,28 +118,10 @@ def verify_payment(
     metadata: dict[str, Any] | None = None,
 ) -> PaymentReceipt:
     """Confirm payment success, fund the order(s), and generate payment receipt."""
+    """The caller must already have checked Razorpay's signature (apps.money.signatures). `brand` is the paying
+    brand for browser confirmations (None for the signed webhook): it must own the session."""
     session = PaymentSession.objects.select_for_update().filter(gateway_order_id=gateway_order_id).first()
-
-    # If not found by gateway_order_id, check if caller passed an order ID directly
-    if session is None:
-        try:
-            order_uuid = UUID(gateway_order_id)
-            order = Order.objects.filter(pk=order_uuid).first()
-            if order:
-                session = PaymentSession.objects.filter(order=order).first()
-                if session is None:
-                    session = PaymentSession.objects.create(
-                        brand=order.brand,
-                        order=order,
-                        gateway="razorpay",
-                        gateway_order_id=f"order_rzp_{uuid.uuid4().hex[:16]}",
-                        amount_paise=order.brand_total_paise,
-                        currency="INR",
-                    )
-        except (ValueError, TypeError):
-            pass
-
-    if session is None:
+    if session is None or (brand is not None and session.brand_id != brand.pk):
         raise NotFound("Payment session not found.")
 
     # If already paid, return existing receipt

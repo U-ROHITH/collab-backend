@@ -1,3 +1,6 @@
+import hashlib
+import hmac
+import json
 from typing import Any
 
 import pytest
@@ -75,6 +78,20 @@ def test_checkout_initialization_from_cart(brand: APIClient, creator: Any, packa
     assert CartItem.objects.filter(brand=brand.user.brand).count() == 0
 
 
+_KEY_SECRET = "unit-test-key-secret"
+_WEBHOOK_SECRET = "unit-test-webhook-secret"
+
+
+@pytest.fixture(autouse=True)
+def _razorpay_secrets(settings: Any) -> None:
+    settings.RAZORPAY_KEY_SECRET = _KEY_SECRET
+    settings.RAZORPAY_WEBHOOK_SECRET = _WEBHOOK_SECRET
+
+
+def _sign(secret: str, message: bytes) -> str:
+    return hmac.new(secret.encode(), message, hashlib.sha256).hexdigest()
+
+
 def test_payment_verify_transitions_order_and_creates_receipt(
     brand: APIClient, creator: Any, package: CreatorPackage
 ) -> None:
@@ -95,13 +112,13 @@ def test_payment_verify_transitions_order_and_creates_receipt(
     chk_resp = brand.post("/v1/checkout/", {"orderId": str(order.id)}, format="json")
     gateway_order_id = chk_resp.json()["data"]["orderId"]
 
-    # 2. Verify payment success
+    # 2. Verify payment success (signed the way Razorpay Checkout signs it)
     verify_resp = brand.post(
         "/v1/payments/verify/",
         {
             "orderId": gateway_order_id,
             "paymentId": "pay_test_12345678",
-            "signature": "test_signature_hex",
+            "signature": _sign(_KEY_SECRET, f"{gateway_order_id}|pay_test_12345678".encode()),
         },
         format="json",
     )
@@ -155,7 +172,13 @@ def test_payment_webhook_handler(brand: APIClient, creator: Any, package: Creato
             }
         },
     }
-    resp = client.post("/v1/payments/verify/", webhook_payload, format="json")
+    raw = json.dumps(webhook_payload).encode()
+    resp = client.post(
+        "/v1/payments/verify/",
+        raw,
+        content_type="application/json",
+        HTTP_X_RAZORPAY_SIGNATURE=_sign(_WEBHOOK_SECRET, raw),
+    )
     assert resp.status_code == 200, resp.json()
     order.refresh_from_db()
     assert order.status == OrderStatus.FUNDED

@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.brands.views import my_brand
-from apps.core.exceptions import NotFound
+from apps.core.exceptions import Forbidden, NotFound
 from apps.creators.serializers import money
 from apps.creators.views import _my_creator
 from apps.identity.permissions import IsBrand, IsCreator
@@ -21,6 +21,7 @@ from apps.money.serializers import (
     WithdrawalInput,
     WithdrawalOutput,
 )
+from apps.money.signatures import check_checkout_signature, check_webhook_signature
 
 
 class CheckoutView(APIView):
@@ -63,30 +64,42 @@ class CheckoutView(APIView):
 
 
 class PaymentVerifyView(APIView):
+    """Two callers, both of which must prove the payment happened:
+    - Razorpay's webhook: signed body (X-Razorpay-Signature), no user.
+    - The paying brand's browser after Razorpay Checkout: signed order|payment ids, and the session must be theirs.
+    """
+
     permission_classes = [AllowAny]
     throttle_scope = "writes"
 
     @extend_schema(request=PaymentVerifyInput, responses={200: PaymentReceiptOutput})
     def post(self, request: Request) -> Response:
+        raw_body = request._request.body  # read before DRF parses it: the webhook signature covers these bytes
+        webhook_signature = request.headers.get("X-Razorpay-Signature", "")
         data = PaymentVerifyInput(data=request.data)
         data.is_valid(raise_exception=True)
         validated = data.validated_data
 
-        # Handle webhook format
-        if validated.get("event") == "payment.captured" and "payload" in validated:
-            entity = validated["payload"].get("payment", {}).get("entity", {})
+        brand = None
+        if webhook_signature or validated.get("event"):
+            check_webhook_signature(raw_body=raw_body, signature=webhook_signature)
+            if validated.get("event") != "payment.captured":
+                return Response({"ignored": True})
+            entity = (validated.get("payload") or {}).get("payment", {}).get("entity", {})
             gateway_order_id = entity.get("order_id") or ""
             payment_id = entity.get("id") or ""
-            signature = ""
+            signature = webhook_signature
         else:
+            brand = getattr(request.user, "brand", None) if getattr(request.user, "is_authenticated", False) else None
+            if brand is None:
+                raise Forbidden("Sign in as the paying brand to confirm a payment.")
             gateway_order_id = validated.get("razorpayOrderId") or validated.get("orderId") or ""
             payment_id = validated.get("razorpayPaymentId") or validated.get("paymentId") or ""
             signature = validated.get("razorpaySignature") or validated.get("signature") or ""
+            check_checkout_signature(razorpay_order_id=gateway_order_id, payment_id=payment_id, signature=signature)
 
         if not gateway_order_id or not payment_id:
             raise NotFound("Missing orderId or paymentId for verification.")
-
-        brand = getattr(request.user, "brand", None) if request.user and request.user.is_authenticated else None
 
         receipt = services.verify_payment(
             gateway_order_id=gateway_order_id,
