@@ -205,7 +205,13 @@ SPECTACULAR_SETTINGS = {
     "SERVE_INCLUDE_SCHEMA": False,
     "COMPONENT_SPLIT_REQUEST": True,
     "CAMELIZE_NAMES": False,
-    "ENUM_NAME_OVERRIDES": {"PlatformEnum": "apps.creators.models.Platform"},
+    "ENUM_NAME_OVERRIDES": {
+        "PlatformEnum": "apps.creators.models.Platform",
+        "UserRoleEnum": "apps.identity.models.Role",
+        "SignupRoleEnum": ["brand", "creator"],
+        "UserStatusEnum": "apps.identity.models.UserStatus",
+        "BidStatusEnum": "apps.campaigns.models.BidStatus",
+    },
 }
 
 # --- KYC / field encryption -----------------------------------------------------------------------

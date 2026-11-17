@@ -1,5 +1,7 @@
 from typing import Any
 
+from drf_spectacular.extensions import OpenApiSerializerFieldExtension
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.core.serializers import MoneyField, StrictSerializer
@@ -83,6 +85,20 @@ class PlatformStatsInput(StrictSerializer):
     followersCount = FormIntegerField(min_value=0, max_value=2_000_000_000, required=False, allow_null=True)  # noqa: N815
     engagementRate = FormRateField(min_value=0, max_value=100, required=False, allow_null=True)  # noqa: N815
     avgViews = FormIntegerField(min_value=0, max_value=2_000_000_000, required=False, allow_null=True)  # noqa: N815
+
+
+class PlatformStatsOutput(serializers.Serializer):
+    handle = serializers.CharField(max_length=120, allow_blank=True)
+    url = serializers.CharField(max_length=500, allow_blank=True)
+    followersCount = serializers.IntegerField(allow_null=True)  # noqa: N815
+    avgViews = serializers.IntegerField(allow_null=True)  # noqa: N815
+    engagementRate = serializers.FloatField(allow_null=True)  # noqa: N815
+    verified = serializers.BooleanField(default=False)
+
+
+class PlatformsOutput(serializers.Serializer):
+    instagram = PlatformStatsOutput(required=False, allow_null=True)
+    youtube = PlatformStatsOutput(required=False, allow_null=True)
 
 
 class PlatformInputField(serializers.Field):
@@ -171,6 +187,65 @@ class RepliesWithinField(serializers.Field):
         return by_label[data]
 
 
+class PlatformInputFieldExtension(OpenApiSerializerFieldExtension):
+    target_class = PlatformInputField
+
+    def map_serializer_field(self, auto_schema: Any, direction: str) -> dict[str, Any]:
+        component = auto_schema.resolve_serializer(PlatformStatsInput, direction)
+        schema: dict[str, Any] = {
+            "oneOf": [
+                component.ref,
+                {"type": "string", "description": "Bare handle, @handle, or profile URL"},
+            ],
+            "description": "Platform handle string, platform stats object, or null to remove.",
+        }
+        if getattr(self.target, "allow_null", False):
+            schema["nullable"] = True
+        return schema
+
+
+class PlatformsDictFieldExtension(OpenApiSerializerFieldExtension):
+    target_class = PlatformsDictField
+
+    def map_serializer_field(self, auto_schema: Any, direction: str) -> dict[str, Any]:
+        component = auto_schema.resolve_serializer(PlatformStatsInput, direction)
+        platform_item: dict[str, Any] = {
+            "oneOf": [
+                component.ref,
+                {"type": "string", "description": "Bare handle, @handle, or profile URL"},
+            ],
+            "nullable": True,
+            "description": "Platform handle string, platform stats object, or null to remove.",
+        }
+        schema: dict[str, Any] = {
+            "type": "object",
+            "properties": {
+                "instagram": platform_item,
+                "youtube": platform_item,
+            },
+            "description": getattr(self.target, "help_text", "")
+            or "{instagram|youtube: {handle, followersCount, engagementRate, avgViews} | null}. "
+            "Merged per platform; null removes that platform.",
+        }
+        if getattr(self.target, "allow_null", False):
+            schema["nullable"] = True
+        return schema
+
+
+class RepliesWithinFieldExtension(OpenApiSerializerFieldExtension):
+    target_class = RepliesWithinField
+
+    def map_serializer_field(self, auto_schema: Any, direction: str) -> dict[str, Any]:
+        schema: dict[str, Any] = {
+            "type": "string",
+            "enum": ["1h", "6h", "24h", "3d"],
+            "description": 'Response time SLA: "1h", "6h", "24h", or "3d".',
+        }
+        if getattr(self.target, "allow_null", False):
+            schema["nullable"] = True
+        return schema
+
+
 class CreatorCardOutput(serializers.ModelSerializer):
     """Public view. Never includes contact details, payout info, or approval internals."""
 
@@ -251,6 +326,7 @@ class CreatorCardOutput(serializers.ModelSerializer):
             val = val.get("handle")
         return normalize_handle("youtube", val)
 
+    @extend_schema_field(PlatformsOutput)
     def get_platforms(self, obj: Creator) -> dict[str, dict[str, Any]]:
         """Platforms with a handle or any stat. Creator-entered, so `verified` is always false for now."""
         links = self._social(obj)
@@ -305,6 +381,7 @@ class CreatorDetailOutput(CreatorCardOutput):
     class Meta(CreatorCardOutput.Meta):
         fields = (*CreatorCardOutput.Meta.fields, "packages", "gallery")
 
+    @extend_schema_field(PackageOutput(many=True))
     def get_packages(self, obj: Creator) -> list[dict[str, Any]]:
         packages = getattr(obj, "active_packages", None)
         if packages is None:
