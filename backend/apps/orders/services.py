@@ -87,6 +87,8 @@ def _apply(
     OrderEvent.objects.create(
         order=order, event=event, from_status=frm, to_status=to, actor=actor, actor_role=role, reason=reason
     )
+    if event == "cancel":
+        order.cancel_reason = reason  # the annotation was read before this event existed
     return order
 
 

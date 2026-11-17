@@ -4,9 +4,19 @@ from apps.identity.models import Role, User
 from apps.orders.models import Order
 
 
+def with_cancel_reason(qs: QuerySet[Order]) -> QuerySet[Order]:
+    """Annotate the reason given on the latest cancel event (one subquery, not one query per order)."""
+    from django.db.models import OuterRef, Subquery
+
+    from apps.orders.models import OrderEvent
+
+    latest = OrderEvent.objects.filter(order=OuterRef("pk"), event="cancel").order_by("-created_at")
+    return qs.annotate(cancel_reason=Subquery(latest.values("reason")[:1]))
+
+
 def orders_visible_to(user: User) -> QuerySet[Order]:
     """Every order query starts here. A user only ever sees orders they are a party to."""
-    base = Order.objects.select_related("brand", "creator")
+    base = with_cancel_reason(Order.objects.select_related("brand", "creator", "review"))
     if user.role == Role.BRAND:
         return base.filter(brand__owner=user)
     if user.role == Role.CREATOR:

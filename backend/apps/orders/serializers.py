@@ -24,6 +24,8 @@ class OrderOutput(serializers.ModelSerializer):
     approvedAt = serializers.DateTimeField(source="approved_at")  # noqa: N815
     completedAt = serializers.DateTimeField(source="completed_at")  # noqa: N815
     allowedActions = serializers.SerializerMethodField()  # noqa: N815
+    cancelReason = serializers.SerializerMethodField()  # noqa: N815
+    review = serializers.SerializerMethodField()
     deadline = LocalDateField()  # "YYYY-MM-DD" (IST); null until funded for bid/package orders
 
     class Meta:
@@ -49,6 +51,8 @@ class OrderOutput(serializers.ModelSerializer):
             "approvedAt",
             "completedAt",
             "allowedActions",
+            "cancelReason",
+            "review",
         )
 
     def get_brand(self, obj: Order) -> dict[str, Any]:
@@ -66,6 +70,21 @@ class OrderOutput(serializers.ModelSerializer):
             "creatorPayout": money(obj.creator_payout_paise),
             "brandTotal": money(obj.brand_total_paise),
         }
+
+    def get_cancelReason(self, obj: Order) -> str | None:  # noqa: N802
+        if hasattr(obj, "cancel_reason"):
+            reason = obj.cancel_reason
+        else:  # an order loaded outside orders_visible_to (e.g. straight after a state change)
+            event = obj.events.filter(event="cancel").order_by("-created_at").first()
+            reason = event.reason if event else None
+        return reason or None
+
+    def get_review(self, obj: Order) -> dict[str, Any] | None:
+        try:
+            review = obj.review
+        except Review.DoesNotExist:
+            return None
+        return {"stars": review.stars, "text": review.text, "createdAt": review.created_at}
 
     def get_allowedActions(self, obj: Order) -> list[str]:  # noqa: N802
         request = self.context.get("request")
