@@ -133,6 +133,8 @@ class SignupCompleteInput(StrictSerializer):
     fullName = serializers.CharField(max_length=120)  # noqa: N815
     brandName = serializers.CharField(max_length=120, required=False, allow_blank=True)  # noqa: N815
     displayName = serializers.CharField(max_length=80, required=False, allow_blank=True)  # noqa: N815
+    # Accepted for older clients and ignored: a phone joins an account only by signing in with an SMS code for it
+    # (attaching an unverified one would let anyone claim someone else's number).
     phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
     phoneNumber = serializers.CharField(max_length=20, required=False, allow_blank=True)  # noqa: N815
     mobile = serializers.CharField(max_length=20, required=False, allow_blank=True)

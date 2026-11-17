@@ -201,7 +201,6 @@ class SignupCompleteView(APIView):
         data = SignupCompleteInput(data=request.data, context={"user": request.user})
         data.is_valid(raise_exception=True)
         v = data.validated_data
-        phone = v.get("phone") or v.get("phoneNumber") or v.get("mobile") or v.get("mobileNumber") or ""
         user = services.complete_signup(
             user=request.user,
             role=v["role"],
@@ -209,7 +208,6 @@ class SignupCompleteView(APIView):
             brand_name=v.get("brandName", ""),
             display_name=v.get("displayName", ""),
             password=v.get("password") or None,
-            phone=phone,
         )
         return Response(MeOutput(user).data, status=status.HTTP_201_CREATED)
 

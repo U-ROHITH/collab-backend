@@ -113,19 +113,7 @@ def update_creator_profile(*, creator: Creator, data: dict[str, Any]) -> Creator
 
     # Sync follower_count with platform stats or explicit followerCount
     follower_count_changed = False
-    primary = data.get("primaryPlatform") or creator.primary_platform
-    derived_follower_count = None
-    if isinstance(creator.platform_stats, dict):
-        primary_stats = creator.platform_stats.get(primary)
-        if isinstance(primary_stats, dict) and primary_stats.get("followersCount") is not None:
-            derived_follower_count = primary_stats["followersCount"]
-        else:
-            for p in ("instagram", "youtube"):
-                st = creator.platform_stats.get(p)
-                if isinstance(st, dict) and st.get("followersCount") is not None:
-                    derived_follower_count = st["followersCount"]
-                    break
-
+    derived_follower_count = creator.stats_followers(data.get("primaryPlatform"))
     if derived_follower_count is not None:
         if creator.follower_count != derived_follower_count:
             creator.follower_count = derived_follower_count

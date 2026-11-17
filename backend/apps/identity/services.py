@@ -388,7 +388,6 @@ def complete_signup(
     brand_name: str = "",
     display_name: str = "",
     password: str | None = None,
-    phone: str = "",
 ) -> User:
     """Set role exactly once and create the matching profile. `admin` is never allowed here."""
     from apps.brands.services import create_brand_for_user
@@ -406,10 +405,6 @@ def complete_signup(
         if password:
             locked.set_password(password)
             fields.append("password")
-        # `phone` is accepted but never attached here: it's a login identifier, and attaching it without an
-        # SMS code would let anyone claim someone else's number (their SMS sign-in would land in this account).
-        # A number gets onto an account only by signing in with an SMS code for it.
-        del phone
         locked.save(update_fields=fields)
         if role == Role.BRAND:
             create_brand_for_user(user=locked, name=brand_name)  # never the owner's personal name
@@ -425,62 +420,24 @@ def complete_signup(
     return locked
 
 
-def record_audit(
-    admin: User | None = None,
-    action: str = "",
-    target: Any = None,
-    detail: dict[str, Any] | None = None,
-    *,
-    actor: User | None = None,
-    entity_type: str | None = None,
-    entity_id: str | None = None,
-    metadata: dict[str, Any] | None = None,
-) -> dict[str, str]:
-    """Record an audit log entry inside transaction.atomic(), returning { id, hash }."""
-    actor_user = admin or actor
-    meta = dict(detail if detail is not None else (metadata or {}))
-
-    if target is not None:
-        if hasattr(target, "_meta"):
-            e_type = target._meta.model_name
-            e_id = str(target.pk)
-        elif isinstance(target, tuple | list) and len(target) == 2:
-            e_type, e_id = str(target[0]), str(target[1])
-        elif isinstance(target, dict):
-            e_type = str(target.get("type", "target"))
-            e_id = str(target.get("id", ""))
-        elif isinstance(target, str):
-            if ":" in target:
-                e_type, e_id = target.split(":", 1)
-            else:
-                e_type, e_id = "target", target
-        else:
-            e_type, e_id = type(target).__name__.lower(), str(target)
+def record_audit(*, admin: User | None, action: str, target: Any, detail: dict[str, Any]) -> dict[str, str]:
+    """Append an audit entry with a SHA-256 fingerprint of its contents; returns {id, hash}.
+    `target` is a model instance or a "type:id" string."""
+    if hasattr(target, "_meta"):
+        entity_type, entity_id = target._meta.model_name, str(target.pk)
     else:
-        e_type = entity_type or ""
-        e_id = entity_id or ""
-
+        entity_type, _, entity_id = str(target).partition(":")
     with transaction.atomic():
-        log = AuditLog(
-            actor=actor_user,
-            action=action,
-            entity_type=e_type,
-            entity_id=e_id,
-            metadata=meta,
+        log = AuditLog.objects.create(
+            actor=admin, action=action, entity_type=entity_type, entity_id=entity_id, metadata=detail
         )
-        log.save()
         payload = (
-            f"{log.id}:"
-            f"{log.created_at.isoformat() if log.created_at else ''}:"
-            f"{actor_user.id if actor_user else ''}:"
-            f"{action}:{e_type}:{e_id}:"
-            f"{json.dumps(meta, sort_keys=True)}"
+            f"{log.id}:{log.created_at.isoformat()}:{admin.id if admin else ''}:"
+            f"{action}:{entity_type}:{entity_id}:{json.dumps(detail, sort_keys=True)}"
         )
-        entry_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
-        log.hash = entry_hash
+        log.hash = hashlib.sha256(payload.encode()).hexdigest()
         log.save(update_fields=["hash"])
-
-    return {"id": str(log.id), "hash": entry_hash}
+    return {"id": str(log.id), "hash": log.hash}
 
 
 MFA_CHALLENGE_TIMEOUT_SECONDS = 600  # 10 minutes

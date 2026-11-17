@@ -361,17 +361,7 @@ class CreatorCardOutput(serializers.ModelSerializer):
         return out
 
     def get_followerCount(self, obj: Creator) -> int | None:  # noqa: N802
-        """Derived from primary platform stats, fallback to other platforms, fallback to follower_count field."""
-        if isinstance(obj.platform_stats, dict):
-            primary = obj.primary_platform
-            primary_stats = obj.platform_stats.get(primary)
-            if isinstance(primary_stats, dict) and primary_stats.get("followersCount") is not None:
-                return primary_stats["followersCount"]
-            for p in STATS_PLATFORMS:
-                stats = obj.platform_stats.get(p)
-                if isinstance(stats, dict) and stats.get("followersCount") is not None:
-                    return stats["followersCount"]
-        return obj.follower_count
+        return obj.followers
 
     def get_startingPrice(self, obj: Creator) -> dict[str, Any] | None:  # noqa: N802
         return money(getattr(obj, "starting_price", None))
