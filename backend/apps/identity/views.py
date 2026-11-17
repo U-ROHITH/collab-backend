@@ -6,7 +6,6 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
-from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
@@ -182,8 +181,7 @@ class LogoutView(APIView):
 class LogoutAllView(APIView):
     @extend_schema(request=None, responses={204: None})
     def post(self, request: Request) -> Response:
-        for outstanding in OutstandingToken.objects.filter(user=request.user):
-            BlacklistedToken.objects.get_or_create(token=outstanding)
+        services.revoke_all_sessions(request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

@@ -237,6 +237,12 @@ def password_version(user: User) -> str:
     return hashlib.sha256(user.password.encode()).hexdigest()[:12]
 
 
+def revoke_all_sessions(user: User) -> None:
+    """Blacklist every live refresh token of this user in one insert (expired ones are useless already)."""
+    live = OutstandingToken.objects.filter(user=user, expires_at__gt=timezone.now())
+    BlacklistedToken.objects.bulk_create([BlacklistedToken(token=t) for t in live], ignore_conflicts=True)
+
+
 def issue_tokens(user: User, *, method: str | None = None) -> AuthResult:
     refresh = RefreshToken.for_user(user)
     if method:
@@ -372,10 +378,7 @@ def _set_password_everywhere(user: User, password: str, *, action: str) -> None:
         locked = User.objects.select_for_update().get(pk=user.pk)
         locked.set_password(password)
         locked.save(update_fields=["password", "updated_at"])
-        BlacklistedToken.objects.bulk_create(
-            [BlacklistedToken(token=t) for t in OutstandingToken.objects.filter(user=locked)],
-            ignore_conflicts=True,
-        )
+        revoke_all_sessions(locked)
         AuditLog.objects.create(actor=locked, action=action, entity_type="user", entity_id=str(locked.pk), metadata={})
     user.password = locked.password
 
