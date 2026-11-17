@@ -109,6 +109,9 @@ def create_campaign(*, brand: Brand, data: dict[str, Any]) -> Campaign:
     return Campaign.objects.create(brand=brand, **{_CAMPAIGN_FIELDS[k]: v for k, v in data.items()})
 
 
+_BID_TERMS = frozenset({"brief", "deliverables", "platform", "usage_rights"})
+
+
 def update_campaign(*, brand: Brand, campaign_id: UUID, data: dict[str, Any]) -> Campaign:
     with transaction.atomic():
         campaign = Campaign.objects.select_for_update().filter(pk=campaign_id, brand=brand).first()
@@ -119,6 +122,15 @@ def update_campaign(*, brand: Brand, campaign_id: UUID, data: dict[str, Any]) ->
         changes = {_CAMPAIGN_FIELDS[k]: v for k, v in data.items()}
         if changes.get("status") not in (None, CampaignStatus.DRAFT, CampaignStatus.OPEN):
             raise DomainError("Use the close endpoint to close a campaign.", code="INVALID_STATUS")
+        # Creators bid on these terms, and a selected bid becomes an order on them: fixed once anyone has bid.
+        if set(changes) & _BID_TERMS and Bid.objects.filter(campaign=campaign).exists():
+            raise Conflict(
+                "Creators have already bid on these terms, so the brief, deliverables, platform and usage rights "
+                "can't change. Close this campaign and post a new one instead.",
+                code="CAMPAIGN_TERMS_LOCKED",
+            )
+        if "closes_at" in changes and changes["closes_at"] <= timezone.now():
+            raise DomainError("Closing date must be in the future.", code="INVALID_CLOSES_AT")
         for field, value in changes.items():
             setattr(campaign, field, value)
         _check_budget(campaign.budget_min_paise, campaign.budget_max_paise)

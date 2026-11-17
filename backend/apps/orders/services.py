@@ -179,8 +179,9 @@ def create_review(*, actor: User, order_id: UUID, stars: int, text: str) -> Revi
         order = orders_visible_to(actor).select_for_update(of=("self",)).filter(pk=order_id).first()
         if order is None or actor.role != Role.BRAND:
             raise NotFound()
-        if order.status != OrderStatus.COMPLETED:
-            raise DomainError("You can review only after the order is completed.", code="ORDER_NOT_COMPLETED")
+        # Approval is when the brand accepts the work; "completed" needs a payout job that isn't built yet.
+        if order.status not in (OrderStatus.APPROVED, OrderStatus.COMPLETED):
+            raise DomainError("You can review once you've approved the work.", code="ORDER_NOT_COMPLETED")
         if Review.objects.filter(order=order).exists():
             raise Conflict("You already reviewed this order.", code="REVIEW_EXISTS")
         review = Review.objects.create(order=order, brand=order.brand, creator=order.creator, stars=stars, text=text)
