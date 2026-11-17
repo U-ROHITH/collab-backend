@@ -405,14 +405,10 @@ def complete_signup(
         if password:
             locked.set_password(password)
             fields.append("password")
-        if phone and not locked.phone:
-            import contextlib
-
-            with contextlib.suppress(Exception):
-                clean_phone = normalize_destination(OtpChannel.SMS, phone)
-                if not User.objects.filter(phone=clean_phone).exclude(pk=locked.pk).exists():
-                    locked.phone = clean_phone
-                    fields.append("phone")
+        # `phone` is accepted but never attached here: it's a login identifier, and attaching it without an
+        # SMS code would let anyone claim someone else's number (their SMS sign-in would land in this account).
+        # A number gets onto an account only by signing in with an SMS code for it.
+        del phone
         locked.save(update_fields=fields)
         if role == Role.BRAND:
             create_brand_for_user(user=locked, name=brand_name)  # never the owner's personal name

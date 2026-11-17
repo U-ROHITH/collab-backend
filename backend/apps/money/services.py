@@ -1,3 +1,4 @@
+import logging
 import re
 import secrets
 import uuid
@@ -25,11 +26,7 @@ from apps.notifications.services import notify
 from apps.orders import services as order_services
 from apps.orders.models import Order, OrderStatus
 
-DEFAULT_USAGE_RIGHTS = {"duration": "6m", "channels": ["organic_social"], "exclusivity": False, "territory": "India"}
-try:
-    from tests.fixtures import USAGE_RIGHTS
-except ImportError:
-    USAGE_RIGHTS = DEFAULT_USAGE_RIGHTS
+logger = logging.getLogger(__name__)
 
 UPI_REGEX = r"^[\w\.\-_]{2,256}@[a-zA-Z]{2,64}$"
 
@@ -44,6 +41,7 @@ def initiate_checkout(
     cart: bool = False,
     items: list[dict[str, Any]] | None = None,
     currency: str = "INR",
+    usage_rights: dict[str, Any] | None = None,
 ) -> tuple[PaymentSession, list[Order]]:
     """Initialize a payment/checkout session for an order, package, or cart items."""
     orders: list[Order] = []
@@ -55,26 +53,35 @@ def initiate_checkout(
             raise NotFound("Order not found.") from None
         if order.status != OrderStatus.AWAITING_PAYMENT:
             raise Conflict("Order is already funded or processed.", code="ORDER_ALREADY_PAID")
+        # Paying the same order twice must not be possible: reuse its open session.
+        open_session = PaymentSession.objects.filter(order=order, status="created").first()
+        if open_session is not None:
+            return open_session, [order]
         orders.append(order)
 
     elif package_id:
-        try:
-            package = CreatorPackage.objects.get(pk=package_id, active=True)
-        except CreatorPackage.DoesNotExist:
-            raise NotFound("Package not found or inactive.") from None
+        from apps.creators.selectors import public_creators
+
+        package = (
+            CreatorPackage.objects.filter(pk=package_id, active=True, creator__in=public_creators())
+            .select_related("creator")
+            .first()
+        )
+        if package is None:
+            raise NotFound("Package not found or inactive.")
 
         order = order_services.create_order(
             actor=actor,
             brand=brand,
             creator=package.creator,
             source_type="package",
-            source_id=package.pk,
+            source_id=uuid.uuid4(),  # one order per purchase (orders are unique per source)
             title=package.title,
             deliverables=package.deliverables,
             brief="Direct package checkout",
             subtotal_paise=package.price_paise,
             delivery_days=package.delivery_days,
-            usage_rights=USAGE_RIGHTS,
+            usage_rights=usage_rights,
         )
         orders.append(order)
 
@@ -82,7 +89,7 @@ def initiate_checkout(
         # Check out cart items
         cart_count = CartItem.objects.filter(brand=brand).count()
         if cart_count > 0:
-            orders = checkout_cart(brand=brand, actor=actor, usage_rights=USAGE_RIGHTS)
+            orders = checkout_cart(brand=brand, actor=actor, usage_rights=usage_rights or {})
         else:
             # Check if there is already an order awaiting payment
             pending_orders = list(
@@ -134,19 +141,25 @@ def verify_payment(
     if session.order_id and str(session.order_id) not in order_ids:
         order_ids.append(str(session.order_id))
 
+    not_fundable: list[str] = []
     for oid in order_ids:
-        try:
-            ord_obj = Order.objects.select_for_update().get(pk=UUID(oid))
-            if ord_obj.status == OrderStatus.AWAITING_PAYMENT:
-                order_services.system_event(
-                    order_id=ord_obj.id,
-                    event="fund",
-                    reason=f"Payment verified via {payment_id}",
-                )
-        except Order.DoesNotExist:
-            continue
+        ord_obj = Order.objects.select_for_update().filter(pk=UUID(oid)).first()
+        if ord_obj is not None and ord_obj.status == OrderStatus.AWAITING_PAYMENT:
+            order_services.system_event(order_id=ord_obj.id, event="fund", reason=f"Payment verified via {payment_id}")
+        else:
+            not_fundable.append(oid)
 
-    session.status = "paid"
+    # Money arrived for orders that can't be funded any more (e.g. cancelled while the brand was paying):
+    # record it as owed back, never as a plain success.
+    outcome = "needs_refund" if not_fundable else "paid"
+    if not_fundable:
+        logger.error(
+            "Payment %s captured for %d order(s) that can't be funded (%s); needs refund",
+            payment_id,
+            len(not_fundable),
+            ", ".join(not_fundable),
+        )
+    session.status = outcome
     session.save(update_fields=["status", "updated_at"])
 
     receipt_number = f"REC-{timezone.now().strftime('%Y%m%d')}-{secrets.token_hex(4).upper()}"
@@ -158,7 +171,7 @@ def verify_payment(
         gateway_signature=signature,
         amount_paise=session.amount_paise,
         currency=session.currency,
-        status="succeeded",
+        status="succeeded" if outcome == "paid" else "needs_refund",
         receipt_number=receipt_number,
     )
 

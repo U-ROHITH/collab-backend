@@ -42,6 +42,7 @@ class CheckoutView(APIView):
             package_id=validated.get("packageId"),
             cart=validated.get("cart", False),
             currency=validated.get("currency", "INR"),
+            usage_rights=validated.get("usageRights"),
         )
 
         return Response(
@@ -137,6 +138,9 @@ class WithdrawalRequestView(APIView):
 
     @extend_schema(request=WithdrawalInput, responses={201: WithdrawalOutput})
     def post(self, request: Request) -> Response:
+        if not settings.PAYOUTS_ENABLED:
+            # Payouts aren't live (no money can leave yet); don't collect bank/UPI details for nothing.
+            raise Forbidden("Withdrawals aren't available yet.", code="PAYOUTS_NOT_LIVE")
         data = WithdrawalInput(data=request.data)
         data.is_valid(raise_exception=True)
         validated = data.validated_data
