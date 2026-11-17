@@ -11,7 +11,7 @@ from apps.identity.models import AuditLog, User
 from apps.kyc.models import KycProfile, KycStatus
 from apps.uploads.models import Upload, UploadKind, UploadStatus
 
-_EDITABLE = (KycStatus.NOT_STARTED, KycStatus.IN_PROGRESS, KycStatus.REJECTED)
+_EDITABLE = (KycStatus.NOT_STARTED, KycStatus.IN_PROGRESS, KycStatus.REJECTED, KycStatus.ACTION_NEEDED)
 
 
 class KycRequired(Forbidden):
@@ -104,7 +104,224 @@ def save_bank(*, user: User, holder_name: str, account_number: str, ifsc: str) -
         return _save_step(kyc, ["bank_holder_name", "bank_account_last4", "bank_account_ciphertext", "bank_ifsc"])
 
 
+def run_automated_checks(user: User, kyc: KycProfile) -> list[dict[str, Any]]:
+    import re
+
+    from apps.identity.models import Role
+
+    checks: list[dict[str, Any]] = []
+
+    def _normalize(s: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", s.lower())
+
+    # 1. Age check (Creator)
+    if user.role == Role.CREATOR:
+        creator = getattr(user, "creator", None)
+        if creator and creator.dob:
+            today = timezone.now().date()
+            dob = creator.dob
+            age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+            if age >= 18:
+                checks.append({
+                    "key": "age_18_plus",
+                    "label": "Age 18+",
+                    "result": "pass",
+                    "text": f"Creator is {age} years old (DOB: {dob})",
+                    "blocking": False,
+                })
+            else:
+                checks.append({
+                    "key": "age_18_plus",
+                    "label": "Age 18+",
+                    "result": "fail",
+                    "text": f"Creator is under 18 ({age} years old; DOB: {dob})",
+                    "blocking": True,
+                })
+        else:
+            checks.append({
+                "key": "age_18_plus",
+                "label": "Age 18+",
+                "result": "warn",
+                "text": "Date of birth not provided on creator profile",
+                "blocking": False,
+            })
+
+    # 2. PAN vs Profile name comparison
+    pan_name = (kyc.pan_name or "").strip()
+    profile_name = (user.full_name or "").strip()
+    if user.role == Role.BRAND:
+        brand = getattr(user, "brand", None)
+        if brand and brand.signatory_name:
+            profile_name = brand.signatory_name.strip()
+        elif brand and brand.legal_name:
+            profile_name = brand.legal_name.strip()
+
+    norm_pan = _normalize(pan_name)
+    norm_profile = _normalize(profile_name)
+    if norm_pan and norm_profile:
+        if norm_pan == norm_profile or norm_pan in norm_profile or norm_profile in norm_pan:
+            checks.append({
+                "key": "name_match",
+                "label": "PAN vs Profile Name",
+                "result": "pass",
+                "text": f"PAN name '{pan_name}' matches profile name '{profile_name}'",
+                "blocking": False,
+            })
+        else:
+            checks.append({
+                "key": "name_match",
+                "label": "PAN vs Profile Name",
+                "result": "warn",
+                "text": f"PAN name '{pan_name}' differs from profile name '{profile_name}'",
+                "blocking": False,
+            })
+    elif not norm_pan:
+        checks.append({
+            "key": "name_match",
+            "label": "PAN vs Profile Name",
+            "result": "fail",
+            "text": "Name on PAN is missing",
+            "blocking": True,
+        })
+    else:
+        checks.append({
+            "key": "name_match",
+            "label": "PAN vs Profile Name",
+            "result": "warn",
+            "text": "Profile name is not set",
+            "blocking": False,
+        })
+
+    # 3. PAN inside GSTIN (Brand)
+    if user.role == Role.BRAND:
+        brand = getattr(user, "brand", None)
+        gstin = (brand.gstin if brand else "").strip().upper()
+        if gstin and len(gstin) == 15:
+            gstin_pan = gstin[2:12]
+            actual_pan = ""
+            if brand and brand.company_pan:
+                actual_pan = brand.company_pan.strip().upper()
+            elif kyc.pan_ciphertext:
+                try:
+                    actual_pan = crypto.decrypt(kyc.pan_ciphertext, context=f"kyc.pan:{user.pk}").strip().upper()
+                except Exception:
+                    actual_pan = ""
+            if actual_pan:
+                if gstin_pan == actual_pan:
+                    checks.append({
+                        "key": "gstin_pan_match",
+                        "label": "GSTIN PAN Match",
+                        "result": "pass",
+                        "text": f"PAN {actual_pan} matches GSTIN characters 3..12",
+                        "blocking": False,
+                    })
+                else:
+                    checks.append({
+                        "key": "gstin_pan_match",
+                        "label": "GSTIN PAN Match",
+                        "result": "fail",
+                        "text": f"PAN {actual_pan} does not match GSTIN {gstin} (expected {gstin_pan})",
+                        "blocking": True,
+                    })
+            else:
+                checks.append({
+                    "key": "gstin_pan_match",
+                    "label": "GSTIN PAN Match",
+                    "result": "warn",
+                    "text": f"GSTIN provided ({gstin}) but no PAN found to compare",
+                    "blocking": False,
+                })
+        elif gstin:
+            checks.append({
+                "key": "gstin_pan_match",
+                "label": "GSTIN PAN Match",
+                "result": "fail",
+                "text": f"Invalid GSTIN length ({len(gstin)} characters)",
+                "blocking": True,
+            })
+        else:
+            checks.append({
+                "key": "gstin_pan_match",
+                "label": "GSTIN PAN Match",
+                "result": "warn",
+                "text": "No GSTIN provided for brand",
+                "blocking": False,
+            })
+
+        # 4. Business Email Domain (Brand)
+        consumer_domains = {
+            "gmail.com",
+            "yahoo.com",
+            "hotmail.com",
+            "outlook.com",
+            "icloud.com",
+            "rediffmail.com",
+            "aol.com",
+            "protonmail.com",
+        }
+        b_email = ""
+        if brand and isinstance(brand.billing_address, dict):
+            b_email = brand.billing_address.get("email", "")
+        if not b_email:
+            b_email = user.email or ""
+        b_email = b_email.strip().lower()
+        domain = b_email.split("@")[-1] if "@" in b_email else ""
+        if domain and domain not in consumer_domains:
+            checks.append({
+                "key": "business_email_domain",
+                "label": "Business Email Domain",
+                "result": "pass",
+                "text": f"Business email domain: {domain}",
+                "blocking": False,
+            })
+        else:
+            checks.append({
+                "key": "business_email_domain",
+                "label": "Business Email Domain",
+                "result": "warn",
+                "text": f"Consumer email domain: {domain or 'none'}",
+                "blocking": False,
+            })
+
+    # 5. Bank Account Holder Name Match
+    bank_holder = (kyc.bank_holder_name or "").strip()
+    norm_bank = _normalize(bank_holder)
+    if norm_bank and norm_pan:
+        if norm_bank == norm_pan or norm_bank in norm_pan or norm_pan in norm_bank:
+            checks.append({
+                "key": "bank_name_match",
+                "label": "Bank Holder Name Match",
+                "result": "pass",
+                "text": f"Bank holder name '{bank_holder}' matches PAN name '{pan_name}'",
+                "blocking": False,
+            })
+        else:
+            checks.append({
+                "key": "bank_name_match",
+                "label": "Bank Holder Name Match",
+                "result": "warn",
+                "text": f"Bank holder name '{bank_holder}' differs from PAN name '{pan_name}'",
+                "blocking": False,
+            })
+    elif not norm_bank:
+        checks.append({
+            "key": "bank_name_match",
+            "label": "Bank Holder Name Match",
+            "result": "fail",
+            "text": "Bank account holder name missing",
+            "blocking": True,
+        })
+
+    return checks
+
+
 def submit(*, user: User) -> KycProfile:
+    from datetime import timedelta
+
+    from apps.identity.models import Role, UserStatus
+    from apps.kyc.models import VerificationKind, VerificationRequest, VerificationStatus
+    from apps.notifications.services import notify
+
     with transaction.atomic():
         kyc = _locked_for_edit(user)
         steps = {"pan": kyc.pan_done, "id": kyc.id_done, "bank": kyc.bank_done}
@@ -114,8 +331,66 @@ def submit(*, user: User) -> KycProfile:
         kyc.status = KycStatus.PENDING
         kyc.submitted_at = timezone.now()
         kyc.rejection_reason = ""
-        kyc.save(update_fields=["status", "submitted_at", "rejection_reason", "updated_at"])
+        kyc.review_message = ""
+        kyc.requested_items = []
+        kyc.save(
+            update_fields=[
+                "status",
+                "submitted_at",
+                "rejection_reason",
+                "review_message",
+                "requested_items",
+                "updated_at",
+            ]
+        )
+
+        checks = run_automated_checks(user, kyc)
+        kind = VerificationKind.BRAND if user.role == Role.BRAND else VerificationKind.CREATOR
+        hours = 48 if kind == VerificationKind.BRAND else 24
+        sla_due_at = timezone.now() + timedelta(hours=hours)
+
+        vr = VerificationRequest.objects.filter(
+            user=user,
+            kyc_profile=kyc,
+            status__in=[VerificationStatus.PENDING, VerificationStatus.INFO_REQUESTED],
+        ).first()
+        if vr is None:
+            vr = VerificationRequest.objects.create(
+                user=user,
+                kyc_profile=kyc,
+                kind=kind,
+                status=VerificationStatus.PENDING,
+                sla_due_at=sla_due_at,
+                submitted_at=timezone.now(),
+                checks=checks,
+            )
+        else:
+            vr.kind = kind
+            vr.status = VerificationStatus.PENDING
+            vr.sla_due_at = sla_due_at
+            vr.submitted_at = timezone.now()
+            vr.decided_at = None
+            vr.decided_by = None
+            vr.decision_reason = ""
+            vr.decision_note = ""
+            vr.requested_items = []
+            vr.checks = checks
+            vr.save()
+
         AuditLog.objects.create(actor=user, action="kyc.submitted", entity_type="kyc", entity_id=str(kyc.pk))
+
+        # Notify admins
+        admins = User.objects.filter(role=Role.ADMIN, is_staff=True, status=UserStatus.ACTIVE)
+        name = user.full_name or user.email or user.phone or "User"
+        for adm in admins:
+            notify(
+                user_id=adm.id,
+                type="verification_submitted",
+                title="New KYC Verification Submitted",
+                body=f"{kind.title()} verification submitted for {name}",
+                data={"verificationId": str(vr.id), "kind": kind, "userId": str(user.id)},
+            )
+
     return kyc
 
 
@@ -131,9 +406,19 @@ def review(*, actor: User, kyc_id: UUID, approve: bool, reason: str = "") -> Kyc
             raise Forbidden("You can't review your own KYC.", code="KYC_SELF_REVIEW")
         kyc.status = KycStatus.VERIFIED if approve else KycStatus.REJECTED
         kyc.rejection_reason = "" if approve else reason.strip()[:300]
+        kyc.review_message = "" if approve else reason.strip()[:300]
         kyc.reviewed_at = timezone.now()
         kyc.reviewed_by = actor
-        kyc.save(update_fields=["status", "rejection_reason", "reviewed_at", "reviewed_by", "updated_at"])
+        kyc.save(
+            update_fields=[
+                "status",
+                "rejection_reason",
+                "review_message",
+                "reviewed_at",
+                "reviewed_by",
+                "updated_at",
+            ]
+        )
         AuditLog.objects.create(
             actor=actor, action=f"kyc.{kyc.status}", entity_type="kyc", entity_id=str(kyc.pk), metadata={}
         )
@@ -151,6 +436,14 @@ def review(*, actor: User, kyc_id: UUID, approve: bool, reason: str = "") -> Kyc
 def summary(kyc: KycProfile | None) -> dict[str, Any]:
     """Masked view for the owner. Never includes the full PAN or account number."""
     k = kyc or KycProfile()
+    review_data = None
+    if k.status in (KycStatus.REJECTED, KycStatus.ACTION_NEEDED, KycStatus.VERIFIED) or k.reviewed_at:
+        review_data = {
+            "reason": k.rejection_reason or None,
+            "requestedItems": list(k.requested_items or []),
+            "message": k.review_message or (k.rejection_reason if k.status == KycStatus.REJECTED else None),
+            "decidedAt": k.reviewed_at,
+        }
     return {
         "status": k.status,
         "rejectionReason": k.rejection_reason or None,
@@ -165,4 +458,5 @@ def summary(kyc: KycProfile | None) -> dict[str, Any]:
                 "ifsc": k.bank_ifsc or None,
             },
         },
+        "review": review_data,
     }

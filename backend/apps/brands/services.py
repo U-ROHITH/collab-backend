@@ -20,6 +20,12 @@ _BRAND_FIELDS = {
     "logoUrl": "logo_url",
     "logo": "logo_url",
     "avatarUrl": "logo_url",
+    "companyPan": "company_pan",
+    "cin": "cin",
+    "gstinStatus": "gstin_status",
+    "regVerified": "reg_verified",
+    "signatoryName": "signatory_name",
+    "signatoryDesignation": "signatory_designation",
 }
 
 

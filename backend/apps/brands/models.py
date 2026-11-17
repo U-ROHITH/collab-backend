@@ -18,6 +18,13 @@ class Brand(BaseModel):
     state_code = models.CharField(max_length=2, blank=True)  # for CGST/SGST vs IGST
     billing_address = models.JSONField(default=dict, blank=True)
 
+    company_pan = models.CharField(max_length=10, blank=True)
+    cin = models.CharField(max_length=21, blank=True)
+    gstin_status = models.CharField(max_length=20, default="unverified", blank=True)
+    reg_verified = models.BooleanField(default=False)
+    signatory_name = models.CharField(max_length=120, blank=True)
+    signatory_designation = models.CharField(max_length=80, blank=True)
+
     class Meta:
         constraints = [
             models.CheckConstraint(condition=Q(gstin="") | Q(gstin__regex=GSTIN_REGEX), name="brand_gstin_format"),

@@ -275,26 +275,59 @@ One conversation per brand–creator pair, allowed once a bid, offer or order ex
 | POST | `/v1/conversations/{id}/read/` | marks read |
 
 ## KYC
-Upload the ID document first: `POST /v1/uploads/` with `kind: "kyc_document"` (JPEG/PNG/WebP/PDF, 10 MB, private), PUT the file, then `POST /v1/uploads/{id}/complete/`. Every KYC response has the same shape: `{status, rejectionReason, submittedAt, steps: {pan: {done, nameOnPan, panLast4}, id: {done, idType}, bank: {done, accountHolderName, accountLast4, ifsc}}}`. Full PAN and account numbers are never returned.
+Upload the ID document first: `POST /v1/uploads/` with `kind: "kyc_document"` (JPEG/PNG/WebP/PDF, 10 MB, private), PUT the file, then `POST /v1/uploads/{id}/complete/`. Every KYC response has the same shape:
+```json
+{
+  "status": "not_started" | "in_progress" | "pending" | "action_needed" | "verified" | "rejected",
+  "rejectionReason": "...",
+  "submittedAt": "2026-11-17T12:00:00Z",
+  "steps": {
+    "pan": { "done": true, "nameOnPan": "...", "panLast4": "1234" },
+    "id": { "done": true, "idType": "aadhaar" },
+    "bank": { "done": true, "accountHolderName": "...", "accountLast4": "5678", "ifsc": "HDFC0001234" }
+  },
+  "review": {
+    "reason": "...",
+    "requestedItems": ["id", "pan"],
+    "message": "Please re-upload a clearer copy of your Aadhaar card",
+    "decidedAt": "2026-11-17T12:30:00Z"
+  }
+}
+```
+Full PAN and account numbers are never returned.
 
 | Method | Path | Who | Notes |
 |---|---|---|---|
-| GET | `/v1/kyc/` | brand/creator | status + masked steps |
+| GET | `/v1/kyc/` | brand/creator | status + masked steps + review feedback |
 | PUT | `/v1/kyc/pan/` | brand/creator | `{pan, nameOnPan}`, PAN like `ABCDE1234F` |
 | PUT | `/v1/kyc/id/` | brand/creator | `{idType: aadhaar\|passport\|driving_licence\|voter_id, uploadId}` |
 | PUT | `/v1/kyc/bank/` | brand/creator | `{accountHolderName, accountNumber (9-18 digits), ifsc}` |
-| POST | `/v1/kyc/submit/` | brand/creator | → `pending`. `422 KYC_INCOMPLETE` if a step is missing |
+| POST | `/v1/kyc/submit/` | brand/creator | → `pending`. Runs automated checks (`age_18_plus`, `name_match`, `gstin_pan_match`, `business_email_domain`, `bank_name_match`), computes SLA deadline (+24h creator, +48h brand), creates admin verification record, and notifies ops. `422 KYC_INCOMPLETE` if a step is missing |
 
-Steps can be edited while `not_started`, `in_progress` or `rejected`; otherwise `409 KYC_LOCKED`. Ops verify or reject in the Django admin. The user gets a `kyc_verified` / `kyc_rejected` notification, and on rejection `rejectionReason` says what to fix.
+Steps can be edited while `not_started`, `in_progress`, `action_needed`, or `rejected`; otherwise `409 KYC_LOCKED`. The user receives in-app/push notifications (`kyc_verified`, `kyc_rejected`, `kyc_info_requested`).
 
 ## Super Admin API (/v1/admin/)
 Custom management portal endpoints with role-based access control (`super_admin`, `trust_safety`, `finance`), mandatory 2FA TOTP verification, and SHA-256 tamper-evident audit logging. Non-admin users receive `403 FORBIDDEN`.
 
+### Admin Auth Endpoints
 | Method | Path | Auth / Role | Description |
 |---|---|---|---|
 | POST | `/v1/admin/auth/login/` | anyone | `{email, password}` → `{mfaRequired: true, mfaToken, user}`. Validates admin status and prompts for MFA. |
 | POST | `/v1/admin/auth/mfa/verify/` | anyone (MFA session) | `{code, mfaToken}` → `{access, refresh, user}`. Verifies TOTP and issues JWT with `aal: "aal2"` and admin claims. |
 | POST | `/v1/admin/auth/logout/` | Admin (`IsAdminUser`) | `{refresh}` → `{success: true, message: "..."}`. Blacklists refresh token and records `admin.logout` in audit log. |
+
+### Verification Desk Endpoints (`trust_safety` & `super_admin`)
+Guard: `IsAdminUser` + `RequireAdminRoles("trust_safety")`.
+
+| Method | Path | Auth / Role | Description |
+|---|---|---|---|
+| GET | `/v1/admin/verifications/` | `trust_safety` | Query params: `kind` (`creator`\|`brand`), `status` (`pending`\|`approved`\|`rejected`\|`info_requested`), `limit` (default 20, max 100), `cursor`. Sorted by SLA urgency. Returns list with `meta.counts` (`total`, `pending`, `approved`, `rejected`, `info_requested`, `creator`, `brand`). |
+| GET | `/v1/admin/verifications/{id}/` | `trust_safety` | Full verification detail with user summary, profile, masked KYC details (PAN, Aadhaar/ID signed download URL, bank), automated checks list, and previous decision history. |
+| POST | `/v1/admin/verifications/{id}/approve/` | `trust_safety` | Approves KYC (`verified`) and creator approval / brand registration. **Refused with `409 VERIFICATION_BLOCKED`** if any automated check has `blocking: true`. Emits audit log (`verification.approve`) and user notification (`kyc_verified`). |
+| POST | `/v1/admin/verifications/{id}/reject/` | `trust_safety` | Body: `{reason: "...", note?: "..."}` (`reason` min 4 chars). Rejects KYC (`rejected`), leaves profile resubmittable, logs audit (`verification.reject`), and notifies user (`kyc_rejected`). |
+| POST | `/v1/admin/verifications/{id}/request-info/` | `trust_safety` | Body: `{items: ["id", "pan", "bank"], message: "..."}`. Moves verification to `info_requested` and KYC to `action_needed`, logs audit (`verification.request_info`), and notifies user (`kyc_info_requested`). |
+
+*Note: Calling `approve`, `reject`, or `request-info` on an already-decided verification request returns `409 ALREADY_DECIDED`.*
 
 ### Admin Roles
 - `super_admin`: Full access across all admin modules (creator moderation, dispute resolutions, financial overrides, user management).

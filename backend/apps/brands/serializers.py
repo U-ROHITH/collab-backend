@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 from rest_framework import serializers
@@ -5,6 +6,9 @@ from rest_framework import serializers
 from apps.brands.models import Brand, BrandList, CartItem
 from apps.core.serializers import StrictSerializer, UsageRightsSerializer
 from apps.creators.serializers import CreatorCardOutput, PackageOutput
+
+_PAN = re.compile(r"^[A-Z]{5}\d{4}[A-Z]$")
+_CIN = re.compile(r"^[LU][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$")
 
 
 class BrandOutput(serializers.ModelSerializer):
@@ -18,6 +22,14 @@ class BrandOutput(serializers.ModelSerializer):
     avatar_url = serializers.SerializerMethodField()
     avatar = serializers.SerializerMethodField()
     image = serializers.SerializerMethodField()
+    companyPan = serializers.SerializerMethodField()  # noqa: N815
+    cin = serializers.CharField(allow_blank=True, allow_null=True)
+    gstinStatus = serializers.CharField(source="gstin_status")  # noqa: N815
+    regVerified = serializers.BooleanField(source="reg_verified")  # noqa: N815
+    signatoryName = serializers.CharField(source="signatory_name", allow_blank=True, allow_null=True)  # noqa: N815
+    signatoryDesignation = serializers.CharField(  # noqa: N815
+        source="signatory_designation", allow_blank=True, allow_null=True
+    )
 
     class Meta:
         model = Brand
@@ -37,7 +49,18 @@ class BrandOutput(serializers.ModelSerializer):
             "stateCode",
             "billingAddress",
             "billingEmail",
+            "companyPan",
+            "cin",
+            "gstinStatus",
+            "regVerified",
+            "signatoryName",
+            "signatoryDesignation",
         )
+
+    def get_companyPan(self, obj: Brand) -> str | None:  # noqa: N802
+        if not obj.company_pan:
+            return None
+        return f"XXXXXX{obj.company_pan[-4:]}"
 
     def get_logoUrl(self, obj: Brand) -> str | None:  # noqa: N802
         return obj.logo_url or None
@@ -92,12 +115,30 @@ class BrandInput(StrictSerializer):
     logo = serializers.CharField(max_length=600, required=False, allow_blank=True, allow_null=True)
     avatarUrl = serializers.CharField(max_length=600, required=False, allow_blank=True, allow_null=True)  # noqa: N815
     logoUploadId = serializers.UUIDField(required=False, allow_null=True)  # noqa: N815
+    companyPan = serializers.CharField(max_length=10, required=False, allow_blank=True)  # noqa: N815
+    cin = serializers.CharField(max_length=21, required=False, allow_blank=True)
+    gstinStatus = serializers.CharField(max_length=20, required=False, allow_blank=True)  # noqa: N815
+    regVerified = serializers.BooleanField(required=False)  # noqa: N815
+    signatoryName = serializers.CharField(max_length=120, required=False, allow_blank=True)  # noqa: N815
+    signatoryDesignation = serializers.CharField(max_length=80, required=False, allow_blank=True)  # noqa: N815
 
     def validate_website(self, value: str) -> str:
         value = value.strip()
         if value and not (value.startswith("http://") or value.startswith("https://")):
             return f"https://{value}"
         return value
+
+    def validate_companyPan(self, value: str) -> str:  # noqa: N802
+        val = value.strip().upper()
+        if val and not _PAN.match(val):
+            raise serializers.ValidationError("Enter a valid 10-character PAN (e.g. AABCB1234F).")
+        return val
+
+    def validate_cin(self, value: str) -> str:
+        val = value.strip().upper()
+        if val and not _CIN.match(val):
+            raise serializers.ValidationError("Enter a valid 21-character CIN (e.g. U12345MH2020PTC123456).")
+        return val
 
 
 class ListOutput(serializers.ModelSerializer):

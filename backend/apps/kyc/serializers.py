@@ -61,8 +61,18 @@ class _Steps(serializers.Serializer):
     bank = _BankStep()
 
 
+class KycReviewOutput(serializers.Serializer):
+    reason = serializers.CharField(allow_null=True)
+    requestedItems = serializers.ListField(child=serializers.CharField(), default=list)  # noqa: N815
+    message = serializers.CharField(allow_null=True)
+    decidedAt = serializers.DateTimeField(allow_null=True)  # noqa: N815
+
+
 class KycOutput(serializers.Serializer):
-    status = serializers.ChoiceField(choices=["not_started", "in_progress", "pending", "verified", "rejected"])
+    status = serializers.ChoiceField(
+        choices=["not_started", "in_progress", "pending", "action_needed", "verified", "rejected"]
+    )
     rejectionReason = serializers.CharField(allow_null=True)  # noqa: N815
     submittedAt = serializers.DateTimeField(allow_null=True)  # noqa: N815
     steps = _Steps()
+    review = KycReviewOutput(required=False, allow_null=True)

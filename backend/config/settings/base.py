@@ -211,6 +211,10 @@ SPECTACULAR_SETTINGS = {
         "SignupRoleEnum": ["brand", "creator"],
         "UserStatusEnum": "apps.identity.models.UserStatus",
         "BidStatusEnum": "apps.campaigns.models.BidStatus",
+        "VerificationKindEnum": "apps.kyc.models.VerificationKind",
+        "VerificationStatusEnum": "apps.kyc.models.VerificationStatus",
+        "KycStatusEnum": "apps.kyc.models.KycStatus",
+        "UploadKindEnum": "apps.uploads.models.UploadKind",
     },
 }
 
