@@ -12,6 +12,18 @@ React apps should generate types from the schema: `npx openapi-typescript http:/
 - **Lockout:** 10 wrong passwords per account per IP, and 50 per account across all IPs, per 15 minutes → `429 RATE_LIMITED`. Someone guessing from elsewhere can't lock the owner out. If Redis is unavailable, limits are counted per server process until it recovers (deliberate: sign-in keeps working).
 - Password rules on reset now also reject passwords too similar to the account's email, as signup does.
 
+## Changes on 2026-11-17 (backend audit)
+- **OTP sign-in sends `purpose: "login"`.** Omitting `purpose` means sign-up: `409 USER_EXISTS` for an existing account. Limits: 5 codes per phone/email per hour (`429 RATE_LIMITED`), 5 requests and 10 verifies per minute per IP.
+- **`/signup/complete/` never saves `phone`** (the field is accepted and ignored). A number joins an account only by signing in with an SMS code for it.
+- **`POST /v1/checkout/`**: `usageRights` (same object as campaigns) is required with `packageId` or `cart`; `currency` must be `INR`. The same package can be bought any number of times. Checking out an order again returns its open session.
+- **Payments**: a payment for an order cancelled meanwhile returns a receipt with `status: "needs_refund"`.
+- **Withdrawals**: `POST /v1/creators/me/withdrawals/` returns `403 PAYOUTS_NOT_LIVE` until payouts launch.
+- **Creators**: `dob` is only on `/v1/creators/me/` (no longer public). `avatarUrl` must be `https://…`, max 500; `null` or `""` removes the photo. `location` max 80. Sending only `city` keeps `region` (and vice versa); `""` clears it. Removing follower stats clears `followerCount`. `?category=` matches whole categories, case-insensitive.
+- **Campaigns**: once a creator has bid, `brief`, `deliverables`, `platform` and `usageRights` can't change (`409 CAMPAIGN_TERMS_LOCKED`). `closesAt` edits must be in the future (`422 INVALID_CLOSES_AT`).
+- **Reviews**: allowed once the brand has approved the work (`approved` or `completed`).
+- **Conversations**: the list is ordered by last message, and opening a thread no longer moves it.
+- **Admin API** (`/v1/admin/*`) needs the token from the admin sign-in with TOTP; app-login tokens get 403.
+
 ## Changes on 2026-11-12 (frontend issues report)
 **This file is the reference for what's live.** The "API Reference v1" PDF describes an unmerged branch: `/v1/auth/email/*`, `/v1/creators/me/avatar/`, `/v1/checkout/`, `/v1/payments/verify/`, `/v1/creators/me/wallet/`, `/v1/creators/me/withdrawals/` and `/v1/reports/*` are **not live**; don't build on them. Everything in the tables below is live.
 
