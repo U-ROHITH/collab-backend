@@ -13,10 +13,27 @@ class ActiveUserJWTAuthentication(JWTAuthentication):
     locks out a stolen session immediately rather than when its access token expires.
     """
 
+    def _load_user(self, validated_token: Any) -> Any:
+        """The user plus profile, brand and KYC in one query (views read them on almost every request)."""
+        from rest_framework_simplejwt.settings import api_settings
+
+        try:
+            user_id = validated_token[api_settings.USER_ID_CLAIM]
+        except KeyError:
+            raise AuthenticationFailed("Token contained no recognizable user identification.") from None
+        user = (
+            self.user_model.objects.select_related("creator", "brand", "kyc")
+            .filter(**{api_settings.USER_ID_FIELD: user_id})
+            .first()
+        )
+        if user is None or not user.is_active:
+            raise AuthenticationFailed("User not found or inactive.", code="user_not_found")
+        return user
+
     def get_user(self, validated_token: Any) -> Any:
         from apps.identity.services import password_version
 
-        user = super().get_user(validated_token)
+        user = self._load_user(validated_token)
         issued_for = validated_token.get("pwv")
         # Only accounts with a password have one to protect; this also keeps sessions issued before
         # this check existed (older fingerprint format) working for code-only accounts.

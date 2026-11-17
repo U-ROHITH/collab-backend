@@ -20,6 +20,7 @@ from apps.campaigns.serializers import (
     MyBidOutput,
 )
 from apps.core.exceptions import NotFound
+from apps.core.public_cache import cache_for_guests
 from apps.identity.models import Role
 from apps.identity.permissions import IsApprovedCreator, IsBrand, IsBrandOrCreator, IsCreator
 from apps.kyc.services import require_verified as require_kyc
@@ -38,6 +39,10 @@ class CampaignListCreateView(ListAPIView):
     permission_classes = [_PublicReadOrBrandOrCreator]
     serializer_class = CampaignOutput
     throttle_scope = "writes"
+
+    @cache_for_guests
+    def get(self, request: Request, *args: object, **kwargs: object) -> Response:
+        return super().get(request, *args, **kwargs)
 
     def get_queryset(self):  # type: ignore[no-untyped-def]
         query = CampaignListQuery(data=self.request.query_params.dict())
@@ -69,6 +74,7 @@ class CampaignDetailView(APIView):
     throttle_scope = "writes"
 
     @extend_schema(responses=CampaignOutput)
+    @cache_for_guests
     def get(self, request: Request, campaign_id: UUID) -> Response:
         qs = services.with_bid_count(services.campaigns_listed_for(request.user).select_related("brand"))
         campaign = qs.filter(pk=campaign_id).first()
