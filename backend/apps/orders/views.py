@@ -154,7 +154,9 @@ class CreatorReviewsView(ListAPIView):
     serializer_class = ReviewOutput
 
     def get_queryset(self):  # type: ignore[no-untyped-def]
-        creator = get_public_creator(self.kwargs["creator_id"])
+        user = getattr(self.request, "user", None)
+        viewer = user if user and user.is_authenticated else None
+        creator = get_public_creator(self.kwargs["creator_id"], viewer=viewer)
         if creator is None:
             raise NotFound()
         return Review.objects.filter(creator=creator).select_related("brand")

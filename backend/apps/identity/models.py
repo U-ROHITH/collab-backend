@@ -54,9 +54,9 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     phone = models.CharField(max_length=16, unique=True, null=True, blank=True)  # noqa: DJ001 - NULL keeps unique() usable
     full_name = models.CharField(max_length=120, blank=True)
     role = models.CharField(max_length=16, choices=Role.choices, null=True, blank=True)  # noqa: DJ001 - NULL = not onboarded
-    admin_role = models.CharField(
+    admin_role = models.CharField(  # noqa: DJ001 - NULL = not an admin
         max_length=32, choices=AdminRole.choices, null=True, blank=True, db_index=True
-    )  # noqa: DJ001 - NULL = not an admin
+    )
     status = models.CharField(max_length=16, choices=UserStatus.choices, default=UserStatus.ACTIVE)
     is_staff = models.BooleanField(default=False)
     date_joined = models.DateTimeField(default=timezone.now)

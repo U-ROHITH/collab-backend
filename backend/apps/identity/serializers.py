@@ -46,6 +46,9 @@ class MeOutput(serializers.ModelSerializer):
     kycStatus = serializers.SerializerMethodField()  # noqa: N815
     hasPassword = serializers.SerializerMethodField()  # noqa: N815
     avatarUrl = serializers.SerializerMethodField()  # noqa: N815
+    avatar_url = serializers.SerializerMethodField()
+    avatar = serializers.SerializerMethodField()
+    image = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -61,6 +64,9 @@ class MeOutput(serializers.ModelSerializer):
             "kycStatus",
             "hasPassword",
             "avatarUrl",
+            "avatar_url",
+            "avatar",
+            "image",
         )
 
     def get_avatarUrl(self, obj: User) -> str | None:  # noqa: N802
@@ -71,6 +77,15 @@ class MeOutput(serializers.ModelSerializer):
         if brand and brand.logo_url:
             return brand.logo_url
         return None
+
+    def get_avatar_url(self, obj: User) -> str | None:
+        return self.get_avatarUrl(obj)
+
+    def get_avatar(self, obj: User) -> str | None:
+        return self.get_avatarUrl(obj)
+
+    def get_image(self, obj: User) -> str | None:
+        return self.get_avatarUrl(obj)
 
     def get_hasPassword(self, obj: User) -> bool:  # noqa: N802
         """False for accounts created with a code or Google that never set a password."""

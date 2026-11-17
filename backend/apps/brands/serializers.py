@@ -14,6 +14,10 @@ class BrandOutput(serializers.ModelSerializer):
     billingEmail = serializers.SerializerMethodField()  # noqa: N815
     logoUrl = serializers.SerializerMethodField()  # noqa: N815
     avatarUrl = serializers.SerializerMethodField()  # noqa: N815
+    logo_url = serializers.SerializerMethodField()
+    avatar_url = serializers.SerializerMethodField()
+    avatar = serializers.SerializerMethodField()
+    image = serializers.SerializerMethodField()
 
     class Meta:
         model = Brand
@@ -24,6 +28,10 @@ class BrandOutput(serializers.ModelSerializer):
             "industry",
             "logoUrl",
             "avatarUrl",
+            "logo_url",
+            "avatar_url",
+            "avatar",
+            "image",
             "legalName",
             "gstin",
             "stateCode",
@@ -35,6 +43,18 @@ class BrandOutput(serializers.ModelSerializer):
         return obj.logo_url or None
 
     def get_avatarUrl(self, obj: Brand) -> str | None:  # noqa: N802
+        return obj.logo_url or None
+
+    def get_logo_url(self, obj: Brand) -> str | None:
+        return obj.logo_url or None
+
+    def get_avatar_url(self, obj: Brand) -> str | None:
+        return obj.logo_url or None
+
+    def get_avatar(self, obj: Brand) -> str | None:
+        return obj.logo_url or None
+
+    def get_image(self, obj: Brand) -> str | None:
         return obj.logo_url or None
 
     def get_billingAddress(self, obj: Brand) -> Any:  # noqa: N802
@@ -117,7 +137,14 @@ class CartItemOutput(serializers.ModelSerializer):
 
     def get_creator(self, obj: CartItem) -> dict[str, Any]:
         c = obj.package.creator
-        return {"id": str(c.id), "displayName": c.display_name, "avatarUrl": c.avatar_url}
+        return {
+            "id": str(c.id),
+            "displayName": c.display_name,
+            "avatarUrl": c.avatar_url or None,
+            "avatar_url": c.avatar_url or None,
+            "avatar": c.avatar_url or None,
+            "image": c.avatar_url or None,
+        }
 
 
 class CartAddInput(StrictSerializer):

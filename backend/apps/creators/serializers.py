@@ -254,6 +254,9 @@ class CreatorCardOutput(serializers.ModelSerializer):
     repliesWithin = RepliesWithinField(source="replies_within", allow_null=True)  # noqa: N815
     followerCount = serializers.SerializerMethodField()  # noqa: N815
     avatarUrl = serializers.SerializerMethodField()  # noqa: N815
+    avatar_url = serializers.SerializerMethodField()
+    avatar = serializers.SerializerMethodField()
+    image = serializers.SerializerMethodField()
     rating = serializers.FloatField()
     reviewCount = serializers.IntegerField(source="rating_count")  # noqa: N815
     startingPrice = serializers.SerializerMethodField()  # noqa: N815
@@ -280,6 +283,9 @@ class CreatorCardOutput(serializers.ModelSerializer):
             "verified",
             "followerCount",
             "avatarUrl",
+            "avatar_url",
+            "avatar",
+            "image",
             "rating",
             "reviewCount",
             "startingPrice",
@@ -294,6 +300,15 @@ class CreatorCardOutput(serializers.ModelSerializer):
     # ── helpers ──────────────────────────────────────────────────────────────
 
     def get_avatarUrl(self, obj: Creator) -> str | None:  # noqa: N802
+        return obj.avatar_url or None
+
+    def get_avatar_url(self, obj: Creator) -> str | None:
+        return obj.avatar_url or None
+
+    def get_avatar(self, obj: Creator) -> str | None:
+        return obj.avatar_url or None
+
+    def get_image(self, obj: Creator) -> str | None:
         return obj.avatar_url or None
 
     def _social(self, obj: Creator) -> dict:

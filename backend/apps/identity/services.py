@@ -406,13 +406,12 @@ def complete_signup(
             locked.set_password(password)
             fields.append("password")
         if phone and not locked.phone:
-            try:
+            import contextlib
+            with contextlib.suppress(Exception):
                 clean_phone = normalize_destination(OtpChannel.SMS, phone)
                 if not User.objects.filter(phone=clean_phone).exclude(pk=locked.pk).exists():
                     locked.phone = clean_phone
                     fields.append("phone")
-            except Exception:
-                pass
         locked.save(update_fields=fields)
         if role == Role.BRAND:
             create_brand_for_user(user=locked, name=brand_name)  # never the owner's personal name
@@ -652,9 +651,10 @@ def delete_user_completely(*, user: User) -> None:
             brand.delete()
 
         # 3. Clean up User direct relations
+        from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+
         from apps.notifications.models import Notification
         from apps.orders.models import Dispute
-        from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 
         Notification.objects.filter(user=user).delete()
         Dispute.objects.filter(opened_by=user).delete()

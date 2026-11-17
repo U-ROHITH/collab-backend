@@ -96,13 +96,15 @@ class CreatorSearchView(ListAPIView):
 
 
 class CreatorDetailView(APIView):
-    """Public profile of an approved creator (guest view)."""
+    """Public profile of an approved creator (guest view), or viewable by the creator themselves / interacting brand."""
 
     permission_classes = [AllowAny]
 
     @extend_schema(responses=CreatorDetailOutput)
     def get(self, request: Request, creator_id: UUID) -> Response:
-        creator = selectors.get_public_creator(creator_id)
+        user = getattr(request, "user", None)
+        viewer = user if user and user.is_authenticated else None
+        creator = selectors.get_public_creator(creator_id, viewer=viewer)
         if creator is None:
             raise NotFound()
         return Response(CreatorDetailOutput(creator).data)

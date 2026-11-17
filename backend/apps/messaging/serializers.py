@@ -65,6 +65,9 @@ class ConversationOutput(serializers.ModelSerializer):
                 "id": str(c.id),
                 "name": c.display_name,
                 "image": c.avatar_url or None,
+                "avatarUrl": c.avatar_url or None,
+                "avatar_url": c.avatar_url or None,
+                "avatar": c.avatar_url or None,
                 "profile": creator_public(c),
             }
         b = obj.brand
@@ -73,6 +76,11 @@ class ConversationOutput(serializers.ModelSerializer):
             "id": str(b.id),
             "name": b.name,
             "image": b.logo_url or None,
+            "avatarUrl": b.logo_url or None,
+            "avatar_url": b.logo_url or None,
+            "avatar": b.logo_url or None,
+            "logoUrl": b.logo_url or None,
+            "logo_url": b.logo_url or None,
             "profile": brand_public(b),
         }
 
