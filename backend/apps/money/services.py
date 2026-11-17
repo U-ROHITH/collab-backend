@@ -183,22 +183,30 @@ def get_or_sync_wallet(creator: Creator) -> tuple[CreatorWallet, int]:
     """Get creator wallet and synchronize balances from completed orders."""
     wallet, _ = CreatorWallet.objects.select_for_update().get_or_create(creator=creator)
 
-    # 1. Credit any completed or approved orders not yet credited
-    completed_orders = Order.objects.filter(creator=creator, status__in=[OrderStatus.COMPLETED, OrderStatus.APPROVED])
-    for ord_obj in completed_orders:
-        already_credited = WalletTransaction.objects.filter(wallet=wallet, order=ord_obj, type="credit_order").exists()
-        if not already_credited:
-            wallet.balance_paise += ord_obj.creator_payout_paise
-            wallet.total_earned_paise += ord_obj.creator_payout_paise
-            wallet.save(update_fields=["balance_paise", "total_earned_paise", "updated_at"])
-            WalletTransaction.objects.create(
-                wallet=wallet,
-                order=ord_obj,
-                type="credit_order",
-                amount_paise=ord_obj.creator_payout_paise,
-                balance_after_paise=wallet.balance_paise,
-                description=f"Earnings from {ord_obj.title}",
+    # 1. Credit approved/completed orders not yet credited: one query to find them, one insert for all.
+    credited = WalletTransaction.objects.filter(wallet=wallet, type="credit_order").values("order_id")
+    new_earnings = list(
+        Order.objects.filter(creator=creator, status__in=[OrderStatus.COMPLETED, OrderStatus.APPROVED])
+        .exclude(pk__in=credited)
+        .order_by("created_at")
+    )
+    if new_earnings:
+        credits = []
+        for order in new_earnings:
+            wallet.balance_paise += order.creator_payout_paise
+            wallet.total_earned_paise += order.creator_payout_paise
+            credits.append(
+                WalletTransaction(
+                    wallet=wallet,
+                    order=order,
+                    type="credit_order",
+                    amount_paise=order.creator_payout_paise,
+                    balance_after_paise=wallet.balance_paise,
+                    description=f"Earnings from {order.title}",
+                )
             )
+        WalletTransaction.objects.bulk_create(credits)
+        wallet.save(update_fields=["balance_paise", "total_earned_paise", "updated_at"])
 
     # 2. Compute pending payout (in escrow from active funded orders)
     pending_paise = (

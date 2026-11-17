@@ -127,3 +127,30 @@ def test_malformed_payout_details_are_a_400_not_a_500(settings: Any, creator: AP
     settings.PAYOUTS_ENABLED = True
     body = {"amount": 50000, "payoutMethod": "upi", "payoutDetails": "x"}
     assert creator.post("/v1/creators/me/withdrawals/", body, format="json").status_code == 400
+
+
+def test_wallet_sync_credits_each_order_once_in_constant_queries(brand: APIClient, creator: Any, package: Any) -> None:
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    from apps.money.models import CreatorWallet, WalletTransaction
+
+    orders = []
+    for _ in range(6):
+        o = _awaiting_order(brand, creator, package)
+        Order.objects.filter(pk=o.pk).update(source_id=__import__("uuid").uuid4())
+        orders.append(o)
+    Order.objects.filter(pk__in=[o.pk for o in orders]).update(status=OrderStatus.APPROVED)
+
+    with CaptureQueriesContext(connection) as q:
+        first = creator.get("/v1/creators/me/wallet/")
+    assert first.status_code == 200
+    assert len(q) <= 12, "\n".join(x["sql"][:100] for x in q.captured_queries)
+    wallet = CreatorWallet.objects.get(creator=creator.user.creator)
+    expected = sum(Order.objects.get(pk=o.pk).creator_payout_paise for o in orders)
+    assert wallet.balance_paise == wallet.total_earned_paise == expected
+    assert WalletTransaction.objects.filter(type="credit_order").count() == 6
+
+    creator.get("/v1/creators/me/wallet/")  # second sync credits nothing again
+    wallet.refresh_from_db()
+    assert wallet.balance_paise == expected and WalletTransaction.objects.count() == 6
