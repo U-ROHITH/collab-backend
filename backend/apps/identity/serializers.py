@@ -45,10 +45,11 @@ class MeOutput(serializers.ModelSerializer):
     profileId = serializers.SerializerMethodField()  # noqa: N815
     kycStatus = serializers.SerializerMethodField()  # noqa: N815
     hasPassword = serializers.SerializerMethodField()  # noqa: N815
-    avatarUrl = serializers.SerializerMethodField()  # noqa: N815
-    avatar_url = serializers.SerializerMethodField()
-    avatar = serializers.SerializerMethodField()
-    image = serializers.SerializerMethodField()
+    # The same picture (creator photo or brand logo) under every name the frontend reads.
+    avatarUrl = serializers.SerializerMethodField(method_name="get_picture")  # noqa: N815
+    avatar_url = serializers.SerializerMethodField(method_name="get_picture")
+    avatar = serializers.SerializerMethodField(method_name="get_picture")
+    image = serializers.SerializerMethodField(method_name="get_picture")
 
     class Meta:
         model = User
@@ -69,23 +70,9 @@ class MeOutput(serializers.ModelSerializer):
             "image",
         )
 
-    def get_avatarUrl(self, obj: User) -> str | None:  # noqa: N802
-        creator = getattr(obj, "creator", None)
-        if creator and creator.avatar_url:
-            return creator.avatar_url
-        brand = getattr(obj, "brand", None)
-        if brand and brand.logo_url:
-            return brand.logo_url
-        return None
-
-    def get_avatar_url(self, obj: User) -> str | None:
-        return self.get_avatarUrl(obj)
-
-    def get_avatar(self, obj: User) -> str | None:
-        return self.get_avatarUrl(obj)
-
-    def get_image(self, obj: User) -> str | None:
-        return self.get_avatarUrl(obj)
+    def get_picture(self, obj: User) -> str | None:
+        creator, brand = getattr(obj, "creator", None), getattr(obj, "brand", None)
+        return (creator and creator.avatar_url) or (brand and brand.logo_url) or None
 
     def get_hasPassword(self, obj: User) -> bool:  # noqa: N802
         """False for accounts created with a code or Google that never set a password."""

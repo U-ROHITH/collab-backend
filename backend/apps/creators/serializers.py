@@ -255,10 +255,11 @@ class CreatorCardOutput(serializers.ModelSerializer):
     primaryPlatform = serializers.CharField(source="primary_platform", allow_null=True)  # noqa: N815
     repliesWithin = RepliesWithinField(source="replies_within", allow_null=True)  # noqa: N815
     followerCount = serializers.SerializerMethodField()  # noqa: N815
-    avatarUrl = serializers.SerializerMethodField()  # noqa: N815
-    avatar_url = serializers.SerializerMethodField()
-    avatar = serializers.SerializerMethodField()
-    image = serializers.SerializerMethodField()
+    # The same photo under every name the frontend reads.
+    avatarUrl = serializers.SerializerMethodField(method_name="get_photo")  # noqa: N815
+    avatar_url = serializers.SerializerMethodField(method_name="get_photo")
+    avatar = serializers.SerializerMethodField(method_name="get_photo")
+    image = serializers.SerializerMethodField(method_name="get_photo")
     rating = serializers.FloatField()
     reviewCount = serializers.IntegerField(source="rating_count")  # noqa: N815
     startingPrice = serializers.SerializerMethodField()  # noqa: N815
@@ -300,16 +301,7 @@ class CreatorCardOutput(serializers.ModelSerializer):
 
     # ── helpers ──────────────────────────────────────────────────────────────
 
-    def get_avatarUrl(self, obj: Creator) -> str | None:  # noqa: N802
-        return obj.avatar_url or None
-
-    def get_avatar_url(self, obj: Creator) -> str | None:
-        return obj.avatar_url or None
-
-    def get_avatar(self, obj: Creator) -> str | None:
-        return obj.avatar_url or None
-
-    def get_image(self, obj: Creator) -> str | None:
+    def get_photo(self, obj: Creator) -> str | None:
         return obj.avatar_url or None
 
     def _social(self, obj: Creator) -> dict:

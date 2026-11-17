@@ -1,3 +1,4 @@
+import re
 from typing import Any
 from uuid import UUID
 
@@ -107,248 +108,116 @@ def save_bank(*, user: User, holder_name: str, account_number: str, ifsc: str) -
         return _save_step(kyc, ["bank_holder_name", "bank_account_last4", "bank_account_ciphertext", "bank_ifsc"])
 
 
-def run_automated_checks(user: User, kyc: KycProfile) -> list[dict[str, Any]]:
-    import re
+_CHECK_LABELS = {
+    "age_18_plus": "Age 18+",
+    "name_match": "PAN vs Profile Name",
+    "gstin_pan_match": "GSTIN PAN Match",
+    "business_email_domain": "Business Email Domain",
+    "bank_name_match": "Bank Holder Name Match",
+}
+_CONSUMER_DOMAINS = frozenset(
+    {
+        "gmail.com",
+        "yahoo.com",
+        "hotmail.com",
+        "outlook.com",
+        "icloud.com",
+        "rediffmail.com",
+        "aol.com",
+        "protonmail.com",
+    }
+)
 
+
+def _check(key: str, result: str, text: str) -> dict[str, Any]:
+    """Only failures block approval."""
+    return {"key": key, "label": _CHECK_LABELS[key], "result": result, "text": text, "blocking": result == "fail"}
+
+
+def _norm(s: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", s.lower())
+
+
+def _similar(a: str, b: str) -> bool:
+    return a == b or a in b or b in a
+
+
+def _age_check(creator: Any) -> dict[str, Any]:
+    dob = getattr(creator, "dob", None)
+    if dob is None:
+        return _check("age_18_plus", "warn", "Date of birth not provided on creator profile")
+    today = timezone.now().date()
+    age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+    if age >= 18:
+        return _check("age_18_plus", "pass", f"Creator is {age} years old (DOB: {dob})")
+    return _check("age_18_plus", "fail", f"Creator is under 18 ({age} years old; DOB: {dob})")
+
+
+def _name_check(pan_name: str, profile_name: str) -> dict[str, Any]:
+    if not _norm(pan_name):
+        return _check("name_match", "fail", "Name on PAN is missing")
+    if not _norm(profile_name):
+        return _check("name_match", "warn", "Profile name is not set")
+    if _similar(_norm(pan_name), _norm(profile_name)):
+        return _check("name_match", "pass", f"PAN name '{pan_name}' matches profile name '{profile_name}'")
+    return _check("name_match", "warn", f"PAN name '{pan_name}' differs from profile name '{profile_name}'")
+
+
+def _gstin_check(user: User, kyc: KycProfile, brand: Any) -> dict[str, Any]:
+    gstin = (brand.gstin if brand else "").strip().upper()
+    if not gstin:
+        return _check("gstin_pan_match", "warn", "No GSTIN provided for brand")
+    if len(gstin) != 15:
+        return _check("gstin_pan_match", "fail", f"Invalid GSTIN length ({len(gstin)} characters)")
+    if brand and brand.company_pan:
+        pan = brand.company_pan.strip().upper()
+    else:
+        try:
+            pan = crypto.decrypt(kyc.pan_ciphertext, context=f"kyc.pan:{user.pk}").strip().upper()
+        except Exception:  # noqa: BLE001 - no readable PAN means "nothing to compare"
+            pan = ""
+    if not pan:
+        return _check("gstin_pan_match", "warn", f"GSTIN provided ({gstin}) but no PAN found to compare")
+    if gstin[2:12] == pan:
+        return _check("gstin_pan_match", "pass", f"PAN {pan} matches GSTIN characters 3..12")
+    return _check("gstin_pan_match", "fail", f"PAN {pan} does not match GSTIN {gstin} (expected {gstin[2:12]})")
+
+
+def _email_check(user: User, brand: Any) -> dict[str, Any]:
+    billing = brand.billing_address if brand and isinstance(brand.billing_address, dict) else {}
+    email = (billing.get("email") or user.email or "").strip().lower()
+    domain = email.split("@")[-1] if "@" in email else ""
+    if domain and domain not in _CONSUMER_DOMAINS:
+        return _check("business_email_domain", "pass", f"Business email domain: {domain}")
+    return _check("business_email_domain", "warn", f"Consumer email domain: {domain or 'none'}")
+
+
+def run_automated_checks(user: User, kyc: KycProfile) -> list[dict[str, Any]]:
+    """Advisory checks shown on the verification desk; a failing one blocks approval."""
     from apps.identity.models import Role
 
-    checks: list[dict[str, Any]] = []
-
-    def _normalize(s: str) -> str:
-        return re.sub(r"[^a-z0-9]", "", s.lower())
-
-    # 1. Age check (Creator)
-    if user.role == Role.CREATOR:
-        creator = getattr(user, "creator", None)
-        if creator and creator.dob:
-            today = timezone.now().date()
-            dob = creator.dob
-            age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
-            if age >= 18:
-                checks.append(
-                    {
-                        "key": "age_18_plus",
-                        "label": "Age 18+",
-                        "result": "pass",
-                        "text": f"Creator is {age} years old (DOB: {dob})",
-                        "blocking": False,
-                    }
-                )
-            else:
-                checks.append(
-                    {
-                        "key": "age_18_plus",
-                        "label": "Age 18+",
-                        "result": "fail",
-                        "text": f"Creator is under 18 ({age} years old; DOB: {dob})",
-                        "blocking": True,
-                    }
-                )
-        else:
-            checks.append(
-                {
-                    "key": "age_18_plus",
-                    "label": "Age 18+",
-                    "result": "warn",
-                    "text": "Date of birth not provided on creator profile",
-                    "blocking": False,
-                }
-            )
-
-    # 2. PAN vs Profile name comparison
+    brand = getattr(user, "brand", None) if user.role == Role.BRAND else None
     pan_name = (kyc.pan_name or "").strip()
-    profile_name = (user.full_name or "").strip()
+    profile_name = ((brand and (brand.signatory_name or brand.legal_name)) or user.full_name or "").strip()
+    checks = []
+    if user.role == Role.CREATOR:
+        checks.append(_age_check(getattr(user, "creator", None)))
+    checks.append(_name_check(pan_name, profile_name))
     if user.role == Role.BRAND:
-        brand = getattr(user, "brand", None)
-        if brand and brand.signatory_name:
-            profile_name = brand.signatory_name.strip()
-        elif brand and brand.legal_name:
-            profile_name = brand.legal_name.strip()
-
-    norm_pan = _normalize(pan_name)
-    norm_profile = _normalize(profile_name)
-    if norm_pan and norm_profile:
-        if norm_pan == norm_profile or norm_pan in norm_profile or norm_profile in norm_pan:
-            checks.append(
-                {
-                    "key": "name_match",
-                    "label": "PAN vs Profile Name",
-                    "result": "pass",
-                    "text": f"PAN name '{pan_name}' matches profile name '{profile_name}'",
-                    "blocking": False,
-                }
-            )
-        else:
-            checks.append(
-                {
-                    "key": "name_match",
-                    "label": "PAN vs Profile Name",
-                    "result": "warn",
-                    "text": f"PAN name '{pan_name}' differs from profile name '{profile_name}'",
-                    "blocking": False,
-                }
-            )
-    elif not norm_pan:
+        checks += [_gstin_check(user, kyc, brand), _email_check(user, brand)]
+    holder = (kyc.bank_holder_name or "").strip()
+    if not _norm(holder):
+        checks.append(_check("bank_name_match", "fail", "Bank account holder name missing"))
+    elif _norm(pan_name):
+        match = _similar(_norm(holder), _norm(pan_name))
+        verb = "matches" if match else "differs from"
         checks.append(
-            {
-                "key": "name_match",
-                "label": "PAN vs Profile Name",
-                "result": "fail",
-                "text": "Name on PAN is missing",
-                "blocking": True,
-            }
+            _check(
+                "bank_name_match",
+                "pass" if match else "warn",
+                f"Bank holder name '{holder}' {verb} PAN name '{pan_name}'",
+            )
         )
-    else:
-        checks.append(
-            {
-                "key": "name_match",
-                "label": "PAN vs Profile Name",
-                "result": "warn",
-                "text": "Profile name is not set",
-                "blocking": False,
-            }
-        )
-
-    # 3. PAN inside GSTIN (Brand)
-    if user.role == Role.BRAND:
-        brand = getattr(user, "brand", None)
-        gstin = (brand.gstin if brand else "").strip().upper()
-        if gstin and len(gstin) == 15:
-            gstin_pan = gstin[2:12]
-            actual_pan = ""
-            if brand and brand.company_pan:
-                actual_pan = brand.company_pan.strip().upper()
-            elif kyc.pan_ciphertext:
-                try:
-                    actual_pan = crypto.decrypt(kyc.pan_ciphertext, context=f"kyc.pan:{user.pk}").strip().upper()
-                except Exception:
-                    actual_pan = ""
-            if actual_pan:
-                if gstin_pan == actual_pan:
-                    checks.append(
-                        {
-                            "key": "gstin_pan_match",
-                            "label": "GSTIN PAN Match",
-                            "result": "pass",
-                            "text": f"PAN {actual_pan} matches GSTIN characters 3..12",
-                            "blocking": False,
-                        }
-                    )
-                else:
-                    checks.append(
-                        {
-                            "key": "gstin_pan_match",
-                            "label": "GSTIN PAN Match",
-                            "result": "fail",
-                            "text": f"PAN {actual_pan} does not match GSTIN {gstin} (expected {gstin_pan})",
-                            "blocking": True,
-                        }
-                    )
-            else:
-                checks.append(
-                    {
-                        "key": "gstin_pan_match",
-                        "label": "GSTIN PAN Match",
-                        "result": "warn",
-                        "text": f"GSTIN provided ({gstin}) but no PAN found to compare",
-                        "blocking": False,
-                    }
-                )
-        elif gstin:
-            checks.append(
-                {
-                    "key": "gstin_pan_match",
-                    "label": "GSTIN PAN Match",
-                    "result": "fail",
-                    "text": f"Invalid GSTIN length ({len(gstin)} characters)",
-                    "blocking": True,
-                }
-            )
-        else:
-            checks.append(
-                {
-                    "key": "gstin_pan_match",
-                    "label": "GSTIN PAN Match",
-                    "result": "warn",
-                    "text": "No GSTIN provided for brand",
-                    "blocking": False,
-                }
-            )
-
-        # 4. Business Email Domain (Brand)
-        consumer_domains = {
-            "gmail.com",
-            "yahoo.com",
-            "hotmail.com",
-            "outlook.com",
-            "icloud.com",
-            "rediffmail.com",
-            "aol.com",
-            "protonmail.com",
-        }
-        b_email = ""
-        if brand and isinstance(brand.billing_address, dict):
-            b_email = brand.billing_address.get("email", "")
-        if not b_email:
-            b_email = user.email or ""
-        b_email = b_email.strip().lower()
-        domain = b_email.split("@")[-1] if "@" in b_email else ""
-        if domain and domain not in consumer_domains:
-            checks.append(
-                {
-                    "key": "business_email_domain",
-                    "label": "Business Email Domain",
-                    "result": "pass",
-                    "text": f"Business email domain: {domain}",
-                    "blocking": False,
-                }
-            )
-        else:
-            checks.append(
-                {
-                    "key": "business_email_domain",
-                    "label": "Business Email Domain",
-                    "result": "warn",
-                    "text": f"Consumer email domain: {domain or 'none'}",
-                    "blocking": False,
-                }
-            )
-
-    # 5. Bank Account Holder Name Match
-    bank_holder = (kyc.bank_holder_name or "").strip()
-    norm_bank = _normalize(bank_holder)
-    if norm_bank and norm_pan:
-        if norm_bank == norm_pan or norm_bank in norm_pan or norm_pan in norm_bank:
-            checks.append(
-                {
-                    "key": "bank_name_match",
-                    "label": "Bank Holder Name Match",
-                    "result": "pass",
-                    "text": f"Bank holder name '{bank_holder}' matches PAN name '{pan_name}'",
-                    "blocking": False,
-                }
-            )
-        else:
-            checks.append(
-                {
-                    "key": "bank_name_match",
-                    "label": "Bank Holder Name Match",
-                    "result": "warn",
-                    "text": f"Bank holder name '{bank_holder}' differs from PAN name '{pan_name}'",
-                    "blocking": False,
-                }
-            )
-    elif not norm_bank:
-        checks.append(
-            {
-                "key": "bank_name_match",
-                "label": "Bank Holder Name Match",
-                "result": "fail",
-                "text": "Bank account holder name missing",
-                "blocking": True,
-            }
-        )
-
     return checks
 
 

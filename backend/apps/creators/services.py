@@ -43,15 +43,6 @@ def create_creator_for_user(*, user: User, display_name: str) -> Creator:
     return Creator.objects.create(user=user, display_name=display_name, slug=_unique_slug(display_name))
 
 
-def create_catalogue_creator(*, actor: User, display_name: str, **fields: Any) -> Creator:
-    """Admin-created profile for the initial catalogue (no user until claimed)."""
-    creator = Creator.objects.create(display_name=display_name, slug=_unique_slug(display_name), **fields)
-    AuditLog.objects.create(
-        actor=actor, action="creator.catalogue_created", entity_type="creator", entity_id=str(creator.pk)
-    )
-    return creator
-
-
 def _merge_platforms(creator: Creator, social_links: dict[str, Any], platforms: dict[str, Any]) -> dict[str, Any]:
     """Merge per platform: given fields overwrite, others are kept; None removes the platform (handle too)."""
     stats = {k: dict(v) for k, v in (creator.platform_stats or {}).items() if isinstance(v, dict)}

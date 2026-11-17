@@ -14,21 +14,6 @@ class AdminVerificationCheckOutput(serializers.Serializer):
     blocking = serializers.BooleanField()
 
 
-class AdminVerificationDecisionOutput(serializers.Serializer):
-    reason = serializers.CharField(allow_null=True)
-    note = serializers.CharField(allow_null=True)
-    requestedItems = serializers.ListField(child=serializers.CharField(), default=list)  # noqa: N815
-    message = serializers.CharField(allow_null=True)
-
-
-class AdminVerificationChecksSummaryOutput(serializers.Serializer):
-    total = serializers.IntegerField()
-    passed = serializers.IntegerField()
-    warned = serializers.IntegerField()
-    failed = serializers.IntegerField()
-    hasBlocking = serializers.BooleanField()  # noqa: N815
-
-
 class AdminVerificationUserOutput(serializers.Serializer):
     id = serializers.CharField()
     fullName = serializers.CharField(source="full_name")  # noqa: N815
