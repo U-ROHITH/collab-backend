@@ -181,6 +181,9 @@ def test_admin_logout_blacklists_token_and_audits() -> None:
     client.logout()
 
 
+MFA = {"aal": "aal2"}  # what issue_admin_tokens stamps after TOTP
+
+
 def test_is_admin_user_permission_and_roles() -> None:
     class ProtectedAdminView(APIView):
         permission_classes = [IsAdminUser, RequireAdminRoles(AdminRole.SUPER_ADMIN, AdminRole.TRUST_SAFETY)]
@@ -207,21 +210,26 @@ def test_is_admin_user_permission_and_roles() -> None:
     # 3. Admin with non-matching role (finance) -> 403 FORBIDDEN
     finance_admin, _ = _make_admin(email="fin@example.com", admin_role=AdminRole.FINANCE)
     req_fin = factory.get("/test-admin/")
-    force_authenticate(req_fin, user=finance_admin)
+    force_authenticate(req_fin, user=finance_admin, token=MFA)
     resp_fin = view(req_fin)
     assert resp_fin.status_code == 403
 
     # 4. Admin with matching role (trust_safety) -> 200 OK
     trust_admin, _ = _make_admin(email="ts@example.com", admin_role=AdminRole.TRUST_SAFETY)
     req_ts = factory.get("/test-admin/")
-    force_authenticate(req_ts, user=trust_admin)
+    force_authenticate(req_ts, user=trust_admin, token=MFA)
     resp_ts = view(req_ts)
     assert resp_ts.status_code == 200
+
+    # 4b. Same admin, token without the MFA claim (app login / OTP / reset) -> 403
+    req_no_mfa = factory.get("/test-admin/")
+    force_authenticate(req_no_mfa, user=trust_admin, token={"aal": "aal1"})
+    assert view(req_no_mfa).status_code == 403
 
     # 5. Admin with super_admin (always satisfies) -> 200 OK
     super_admin, _ = _make_admin(email="super2@example.com", admin_role=AdminRole.SUPER_ADMIN)
     req_super = factory.get("/test-admin/")
-    force_authenticate(req_super, user=super_admin)
+    force_authenticate(req_super, user=super_admin, token=MFA)
     resp_super = view(req_super)
     assert resp_super.status_code == 200
 
@@ -252,7 +260,7 @@ def test_record_audit_helper() -> None:
         f"{entry.created_at.isoformat() if entry.created_at else ''}:"
         f"{admin.id}:"
         f"creator.verify:creator:12345:"
-        f'{json.dumps({"reason": "Manual KYC check passed"}, sort_keys=True)}'
+        f"{json.dumps({'reason': 'Manual KYC check passed'}, sort_keys=True)}"
     )
     expected_hash = hashlib.sha256(expected_payload.encode("utf-8")).hexdigest()
     assert entry.hash == expected_hash

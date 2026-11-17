@@ -282,4 +282,3 @@ class AdminLogoutView(APIView):
                 pass
         services.record_audit(admin=request.user, action="admin.logout", target=request.user, detail={})
         return Response({"success": True, "message": "Successfully logged out."})
-

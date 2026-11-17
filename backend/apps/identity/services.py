@@ -407,6 +407,7 @@ def complete_signup(
             fields.append("password")
         if phone and not locked.phone:
             import contextlib
+
             with contextlib.suppress(Exception):
                 clean_phone = normalize_destination(OtpChannel.SMS, phone)
                 if not User.objects.filter(phone=clean_phone).exclude(pk=locked.pk).exists():

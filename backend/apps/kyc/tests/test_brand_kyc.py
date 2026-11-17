@@ -8,7 +8,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.identity.models import AdminRole, Role, User
-from apps.identity.services import issue_tokens
+from apps.identity.services import issue_admin_tokens
 from apps.kyc.models import KycProfile, VerificationKind, VerificationRequest
 from tests.fixtures import USAGE_RIGHTS
 
@@ -29,7 +29,7 @@ def _admin() -> APIClient:
         email="ts@example.com", role=Role.ADMIN, admin_role=AdminRole.TRUST_SAFETY, is_staff=True
     )
     client = APIClient()
-    client.credentials(HTTP_AUTHORIZATION=f"Bearer {issue_tokens(admin).access}")
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {issue_admin_tokens(admin).access}")
     return client
 
 

@@ -244,4 +244,3 @@ class AdminAuthTokensOutput(serializers.Serializer):
 
 class AdminLogoutInput(StrictSerializer):
     refresh = serializers.CharField(required=False, allow_blank=True)
-

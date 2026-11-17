@@ -21,7 +21,7 @@ def test_delete_user_completely_creator_with_bids_and_packages():
         price_paise=100000,
         delivery_days=3,
     )
-    
+
     brand_owner = User.objects.create_user(email="brand_owner@example.com", role=Role.BRAND)
     brand = Brand.objects.create(owner=brand_owner, name="Test Brand")
     campaign = Campaign.objects.create(
