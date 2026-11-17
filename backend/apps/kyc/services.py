@@ -439,6 +439,31 @@ def open_verification(user: User, kyc: KycProfile, *, adjust_checks: Any = None)
         )
 
 
+def _kind_of(user: User) -> str:
+    from apps.identity.models import Role
+    from apps.kyc.models import VerificationKind
+
+    return VerificationKind.BRAND if user.role == Role.BRAND else VerificationKind.CREATOR
+
+
+def approval_side_effects(*, kind: str, user_id: Any, checks: list[dict[str, Any]] | None) -> None:
+    """What an approved verification unlocks, for every review path (API desk and Django admin).
+    A creator becomes approved (listed). A brand is marked registration-verified / GSTIN-active only when its
+    GSTIN was actually checked against the PAN: brand KYC is voluntary and may carry no GSTIN at all."""
+    from apps.kyc.models import VerificationKind
+
+    if kind == VerificationKind.CREATOR:
+        from apps.creators.models import ApprovalStatus, Creator
+
+        Creator.objects.filter(user_id=user_id).update(approval_status=ApprovalStatus.APPROVED)
+    elif kind == VerificationKind.BRAND:
+        gstin_checked = any(c.get("key") == "gstin_pan_match" and c.get("result") == "pass" for c in checks or [])
+        if gstin_checked:
+            from apps.brands.models import Brand
+
+            Brand.objects.filter(owner_id=user_id).update(reg_verified=True, gstin_status="active")
+
+
 def review(*, actor: User, kyc_id: UUID, approve: bool, reason: str = "") -> KycProfile:
     """Ops decision from the Django admin. Only submitted (pending) profiles can be reviewed."""
     if not approve and not reason.strip():
@@ -449,6 +474,15 @@ def review(*, actor: User, kyc_id: UUID, approve: bool, reason: str = "") -> Kyc
             raise Conflict("Only submitted KYC can be reviewed.", code="KYC_NOT_PENDING")
         if kyc.user_id == actor.pk:
             raise Forbidden("You can't review your own KYC.", code="KYC_SELF_REVIEW")
+        from apps.kyc.models import VerificationRequest, VerificationStatus
+
+        vr = (
+            VerificationRequest.objects.select_for_update()
+            .filter(kyc_profile=kyc, status__in=[VerificationStatus.PENDING, VerificationStatus.INFO_REQUESTED])
+            .first()
+        )
+        if approve and vr is not None and any(c.get("blocking") is True for c in vr.checks or []):
+            raise Conflict("Verification has blocking checks that must be resolved.", code="VERIFICATION_BLOCKED")
         kyc.status = KycStatus.VERIFIED if approve else KycStatus.REJECTED
         kyc.pan_verified = approve and kyc.pan_done
         kyc.bank_verified = approve and kyc.bank_done
@@ -468,6 +502,16 @@ def review(*, actor: User, kyc_id: UUID, approve: bool, reason: str = "") -> Kyc
                 "updated_at",
             ]
         )
+        if vr is not None:  # keep the verification desk in step with this decision
+            vr.status = VerificationStatus.APPROVED if approve else VerificationStatus.REJECTED
+            vr.decided_at = timezone.now()
+            vr.decided_by = actor
+            vr.decision_reason = kyc.rejection_reason
+            vr.save(update_fields=["status", "decided_at", "decided_by", "decision_reason", "updated_at"])
+        if approve:
+            approval_side_effects(
+                kind=vr.kind if vr else _kind_of(kyc.user), user_id=kyc.user_id, checks=vr.checks if vr else []
+            )
         AuditLog.objects.create(
             actor=actor, action=f"kyc.{kyc.status}", entity_type="kyc", entity_id=str(kyc.pk), metadata={}
         )

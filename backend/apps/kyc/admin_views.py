@@ -25,6 +25,7 @@ from apps.kyc.models import (
     VerificationRequest,
     VerificationStatus,
 )
+from apps.kyc.services import approval_side_effects
 from apps.notifications.services import notify
 
 
@@ -153,14 +154,7 @@ class AdminVerificationApproveView(APIView):
             kyc.save(update_fields=["status", "reviewed_at", "reviewed_by", "rejection_reason", "updated_at"])
             mark_reviewed(kyc, approved=True)
 
-            if vr.kind == VerificationKind.CREATOR:
-                from apps.creators.models import ApprovalStatus, Creator
-
-                Creator.objects.filter(user=vr.user).update(approval_status=ApprovalStatus.APPROVED)
-            elif vr.kind == VerificationKind.BRAND:
-                from apps.brands.models import Brand
-
-                Brand.objects.filter(owner=vr.user).update(reg_verified=True, gstin_status="active")
+            approval_side_effects(kind=vr.kind, user_id=vr.user_id, checks=vr.checks)
 
             audit = record_audit(
                 admin=request.user,
