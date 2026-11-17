@@ -52,6 +52,9 @@ class KycProfile(BaseModel):
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
     rejection_reason = models.CharField(max_length=300, blank=True)
+    # Per-field results of manual review (brand KYC shows them separately). Reset when that field changes.
+    pan_verified = models.BooleanField(default=False)
+    bank_verified = models.BooleanField(default=False)
     review_message = models.TextField(blank=True)
     requested_items = models.JSONField(default=list, blank=True)
 

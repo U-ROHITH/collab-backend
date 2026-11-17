@@ -18,6 +18,7 @@ from apps.kyc.admin_serializers import (
     AdminVerificationRejectInput,
     AdminVerificationRequestInfoInput,
 )
+from apps.kyc.brand_kyc import mark_reviewed
 from apps.kyc.models import (
     KycStatus,
     VerificationKind,
@@ -150,6 +151,7 @@ class AdminVerificationApproveView(APIView):
             kyc.reviewed_by = request.user
             kyc.rejection_reason = ""
             kyc.save(update_fields=["status", "reviewed_at", "reviewed_by", "rejection_reason", "updated_at"])
+            mark_reviewed(kyc, approved=True)
 
             if vr.kind == VerificationKind.CREATOR:
                 from apps.creators.models import ApprovalStatus, Creator
@@ -226,6 +228,7 @@ class AdminVerificationRejectView(APIView):
 
             kyc = vr.kyc_profile
             kyc.status = KycStatus.REJECTED
+            kyc.pan_verified = kyc.bank_verified = False
             kyc.rejection_reason = reason
             kyc.review_message = reason
             kyc.reviewed_at = timezone.now()
@@ -237,6 +240,8 @@ class AdminVerificationRejectView(APIView):
                     "review_message",
                     "reviewed_at",
                     "reviewed_by",
+                    "pan_verified",
+                    "bank_verified",
                     "updated_at",
                 ]
             )

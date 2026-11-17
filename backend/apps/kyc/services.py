@@ -25,7 +25,10 @@ def status_of(user: User | None) -> str:
 
 
 def require_verified(user: User) -> None:
-    """Gate for money-moving actions. Raises 403 KYC_REQUIRED unless verified (or enforcement is off)."""
+    """Gate for a creator's money-moving actions. Raises 403 KYC_REQUIRED unless verified (or enforcement is off).
+    Brand KYC is voluntary (refunds/compliance only), so brands are never blocked."""
+    if getattr(user, "role", None) == "brand":
+        return
     if settings.KYC_ENFORCED and status_of(user) != KycStatus.VERIFIED:
         raise KycRequired()
 
@@ -40,7 +43,7 @@ def require_order_parties_verified(*, actor: User, brand_owner: User | None, cre
     checkout). The caller gets 403 KYC_REQUIRED for their own KYC, 422 COUNTERPARTY_KYC_PENDING for the other side's."""
     if not settings.KYC_ENFORCED:
         return
-    for party in (brand_owner, creator_user):
+    for party in (creator_user,):  # brand KYC is voluntary: only the creator (who gets paid) must be verified
         if party is None or status_of(party) != KycStatus.VERIFIED:
             if party is not None and party.pk == actor.pk:
                 raise KycRequired()
@@ -122,29 +125,35 @@ def run_automated_checks(user: User, kyc: KycProfile) -> list[dict[str, Any]]:
             dob = creator.dob
             age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
             if age >= 18:
-                checks.append({
-                    "key": "age_18_plus",
-                    "label": "Age 18+",
-                    "result": "pass",
-                    "text": f"Creator is {age} years old (DOB: {dob})",
-                    "blocking": False,
-                })
+                checks.append(
+                    {
+                        "key": "age_18_plus",
+                        "label": "Age 18+",
+                        "result": "pass",
+                        "text": f"Creator is {age} years old (DOB: {dob})",
+                        "blocking": False,
+                    }
+                )
             else:
-                checks.append({
+                checks.append(
+                    {
+                        "key": "age_18_plus",
+                        "label": "Age 18+",
+                        "result": "fail",
+                        "text": f"Creator is under 18 ({age} years old; DOB: {dob})",
+                        "blocking": True,
+                    }
+                )
+        else:
+            checks.append(
+                {
                     "key": "age_18_plus",
                     "label": "Age 18+",
-                    "result": "fail",
-                    "text": f"Creator is under 18 ({age} years old; DOB: {dob})",
-                    "blocking": True,
-                })
-        else:
-            checks.append({
-                "key": "age_18_plus",
-                "label": "Age 18+",
-                "result": "warn",
-                "text": "Date of birth not provided on creator profile",
-                "blocking": False,
-            })
+                    "result": "warn",
+                    "text": "Date of birth not provided on creator profile",
+                    "blocking": False,
+                }
+            )
 
     # 2. PAN vs Profile name comparison
     pan_name = (kyc.pan_name or "").strip()
@@ -160,37 +169,45 @@ def run_automated_checks(user: User, kyc: KycProfile) -> list[dict[str, Any]]:
     norm_profile = _normalize(profile_name)
     if norm_pan and norm_profile:
         if norm_pan == norm_profile or norm_pan in norm_profile or norm_profile in norm_pan:
-            checks.append({
+            checks.append(
+                {
+                    "key": "name_match",
+                    "label": "PAN vs Profile Name",
+                    "result": "pass",
+                    "text": f"PAN name '{pan_name}' matches profile name '{profile_name}'",
+                    "blocking": False,
+                }
+            )
+        else:
+            checks.append(
+                {
+                    "key": "name_match",
+                    "label": "PAN vs Profile Name",
+                    "result": "warn",
+                    "text": f"PAN name '{pan_name}' differs from profile name '{profile_name}'",
+                    "blocking": False,
+                }
+            )
+    elif not norm_pan:
+        checks.append(
+            {
                 "key": "name_match",
                 "label": "PAN vs Profile Name",
-                "result": "pass",
-                "text": f"PAN name '{pan_name}' matches profile name '{profile_name}'",
-                "blocking": False,
-            })
-        else:
-            checks.append({
+                "result": "fail",
+                "text": "Name on PAN is missing",
+                "blocking": True,
+            }
+        )
+    else:
+        checks.append(
+            {
                 "key": "name_match",
                 "label": "PAN vs Profile Name",
                 "result": "warn",
-                "text": f"PAN name '{pan_name}' differs from profile name '{profile_name}'",
+                "text": "Profile name is not set",
                 "blocking": False,
-            })
-    elif not norm_pan:
-        checks.append({
-            "key": "name_match",
-            "label": "PAN vs Profile Name",
-            "result": "fail",
-            "text": "Name on PAN is missing",
-            "blocking": True,
-        })
-    else:
-        checks.append({
-            "key": "name_match",
-            "label": "PAN vs Profile Name",
-            "result": "warn",
-            "text": "Profile name is not set",
-            "blocking": False,
-        })
+            }
+        )
 
     # 3. PAN inside GSTIN (Brand)
     if user.role == Role.BRAND:
@@ -208,45 +225,55 @@ def run_automated_checks(user: User, kyc: KycProfile) -> list[dict[str, Any]]:
                     actual_pan = ""
             if actual_pan:
                 if gstin_pan == actual_pan:
-                    checks.append({
-                        "key": "gstin_pan_match",
-                        "label": "GSTIN PAN Match",
-                        "result": "pass",
-                        "text": f"PAN {actual_pan} matches GSTIN characters 3..12",
-                        "blocking": False,
-                    })
+                    checks.append(
+                        {
+                            "key": "gstin_pan_match",
+                            "label": "GSTIN PAN Match",
+                            "result": "pass",
+                            "text": f"PAN {actual_pan} matches GSTIN characters 3..12",
+                            "blocking": False,
+                        }
+                    )
                 else:
-                    checks.append({
+                    checks.append(
+                        {
+                            "key": "gstin_pan_match",
+                            "label": "GSTIN PAN Match",
+                            "result": "fail",
+                            "text": f"PAN {actual_pan} does not match GSTIN {gstin} (expected {gstin_pan})",
+                            "blocking": True,
+                        }
+                    )
+            else:
+                checks.append(
+                    {
                         "key": "gstin_pan_match",
                         "label": "GSTIN PAN Match",
-                        "result": "fail",
-                        "text": f"PAN {actual_pan} does not match GSTIN {gstin} (expected {gstin_pan})",
-                        "blocking": True,
-                    })
-            else:
-                checks.append({
+                        "result": "warn",
+                        "text": f"GSTIN provided ({gstin}) but no PAN found to compare",
+                        "blocking": False,
+                    }
+                )
+        elif gstin:
+            checks.append(
+                {
+                    "key": "gstin_pan_match",
+                    "label": "GSTIN PAN Match",
+                    "result": "fail",
+                    "text": f"Invalid GSTIN length ({len(gstin)} characters)",
+                    "blocking": True,
+                }
+            )
+        else:
+            checks.append(
+                {
                     "key": "gstin_pan_match",
                     "label": "GSTIN PAN Match",
                     "result": "warn",
-                    "text": f"GSTIN provided ({gstin}) but no PAN found to compare",
+                    "text": "No GSTIN provided for brand",
                     "blocking": False,
-                })
-        elif gstin:
-            checks.append({
-                "key": "gstin_pan_match",
-                "label": "GSTIN PAN Match",
-                "result": "fail",
-                "text": f"Invalid GSTIN length ({len(gstin)} characters)",
-                "blocking": True,
-            })
-        else:
-            checks.append({
-                "key": "gstin_pan_match",
-                "label": "GSTIN PAN Match",
-                "result": "warn",
-                "text": "No GSTIN provided for brand",
-                "blocking": False,
-            })
+                }
+            )
 
         # 4. Business Email Domain (Brand)
         consumer_domains = {
@@ -267,60 +294,65 @@ def run_automated_checks(user: User, kyc: KycProfile) -> list[dict[str, Any]]:
         b_email = b_email.strip().lower()
         domain = b_email.split("@")[-1] if "@" in b_email else ""
         if domain and domain not in consumer_domains:
-            checks.append({
-                "key": "business_email_domain",
-                "label": "Business Email Domain",
-                "result": "pass",
-                "text": f"Business email domain: {domain}",
-                "blocking": False,
-            })
+            checks.append(
+                {
+                    "key": "business_email_domain",
+                    "label": "Business Email Domain",
+                    "result": "pass",
+                    "text": f"Business email domain: {domain}",
+                    "blocking": False,
+                }
+            )
         else:
-            checks.append({
-                "key": "business_email_domain",
-                "label": "Business Email Domain",
-                "result": "warn",
-                "text": f"Consumer email domain: {domain or 'none'}",
-                "blocking": False,
-            })
+            checks.append(
+                {
+                    "key": "business_email_domain",
+                    "label": "Business Email Domain",
+                    "result": "warn",
+                    "text": f"Consumer email domain: {domain or 'none'}",
+                    "blocking": False,
+                }
+            )
 
     # 5. Bank Account Holder Name Match
     bank_holder = (kyc.bank_holder_name or "").strip()
     norm_bank = _normalize(bank_holder)
     if norm_bank and norm_pan:
         if norm_bank == norm_pan or norm_bank in norm_pan or norm_pan in norm_bank:
-            checks.append({
-                "key": "bank_name_match",
-                "label": "Bank Holder Name Match",
-                "result": "pass",
-                "text": f"Bank holder name '{bank_holder}' matches PAN name '{pan_name}'",
-                "blocking": False,
-            })
+            checks.append(
+                {
+                    "key": "bank_name_match",
+                    "label": "Bank Holder Name Match",
+                    "result": "pass",
+                    "text": f"Bank holder name '{bank_holder}' matches PAN name '{pan_name}'",
+                    "blocking": False,
+                }
+            )
         else:
-            checks.append({
+            checks.append(
+                {
+                    "key": "bank_name_match",
+                    "label": "Bank Holder Name Match",
+                    "result": "warn",
+                    "text": f"Bank holder name '{bank_holder}' differs from PAN name '{pan_name}'",
+                    "blocking": False,
+                }
+            )
+    elif not norm_bank:
+        checks.append(
+            {
                 "key": "bank_name_match",
                 "label": "Bank Holder Name Match",
-                "result": "warn",
-                "text": f"Bank holder name '{bank_holder}' differs from PAN name '{pan_name}'",
-                "blocking": False,
-            })
-    elif not norm_bank:
-        checks.append({
-            "key": "bank_name_match",
-            "label": "Bank Holder Name Match",
-            "result": "fail",
-            "text": "Bank account holder name missing",
-            "blocking": True,
-        })
+                "result": "fail",
+                "text": "Bank account holder name missing",
+                "blocking": True,
+            }
+        )
 
     return checks
 
 
 def submit(*, user: User) -> KycProfile:
-    from datetime import timedelta
-
-    from apps.identity.models import Role, UserStatus
-    from apps.kyc.models import VerificationKind, VerificationRequest, VerificationStatus
-    from apps.notifications.services import notify
 
     with transaction.atomic():
         kyc = _locked_for_edit(user)
@@ -344,54 +376,67 @@ def submit(*, user: User) -> KycProfile:
             ]
         )
 
-        checks = run_automated_checks(user, kyc)
-        kind = VerificationKind.BRAND if user.role == Role.BRAND else VerificationKind.CREATOR
-        hours = 48 if kind == VerificationKind.BRAND else 24
-        sla_due_at = timezone.now() + timedelta(hours=hours)
-
-        vr = VerificationRequest.objects.filter(
-            user=user,
-            kyc_profile=kyc,
-            status__in=[VerificationStatus.PENDING, VerificationStatus.INFO_REQUESTED],
-        ).first()
-        if vr is None:
-            vr = VerificationRequest.objects.create(
-                user=user,
-                kyc_profile=kyc,
-                kind=kind,
-                status=VerificationStatus.PENDING,
-                sla_due_at=sla_due_at,
-                submitted_at=timezone.now(),
-                checks=checks,
-            )
-        else:
-            vr.kind = kind
-            vr.status = VerificationStatus.PENDING
-            vr.sla_due_at = sla_due_at
-            vr.submitted_at = timezone.now()
-            vr.decided_at = None
-            vr.decided_by = None
-            vr.decision_reason = ""
-            vr.decision_note = ""
-            vr.requested_items = []
-            vr.checks = checks
-            vr.save()
-
-        AuditLog.objects.create(actor=user, action="kyc.submitted", entity_type="kyc", entity_id=str(kyc.pk))
-
-        # Notify admins
-        admins = User.objects.filter(role=Role.ADMIN, is_staff=True, status=UserStatus.ACTIVE)
-        name = user.full_name or user.email or user.phone or "User"
-        for adm in admins:
-            notify(
-                user_id=adm.id,
-                type="verification_submitted",
-                title="New KYC Verification Submitted",
-                body=f"{kind.title()} verification submitted for {name}",
-                data={"verificationId": str(vr.id), "kind": kind, "userId": str(user.id)},
-            )
+        open_verification(user, kyc)
 
     return kyc
+
+
+def open_verification(user: User, kyc: KycProfile, *, adjust_checks: Any = None) -> None:
+    """Put this KYC on the admin verification desk (or refresh the open request) and alert admins."""
+    from datetime import timedelta
+
+    from apps.identity.models import Role, UserStatus
+    from apps.kyc.models import VerificationKind, VerificationRequest, VerificationStatus
+    from apps.notifications.services import notify
+
+    checks = run_automated_checks(user, kyc)
+    if adjust_checks is not None:
+        checks = adjust_checks(checks)
+    kind = VerificationKind.BRAND if user.role == Role.BRAND else VerificationKind.CREATOR
+    hours = 48 if kind == VerificationKind.BRAND else 24
+    sla_due_at = timezone.now() + timedelta(hours=hours)
+
+    vr = VerificationRequest.objects.filter(
+        user=user,
+        kyc_profile=kyc,
+        status__in=[VerificationStatus.PENDING, VerificationStatus.INFO_REQUESTED],
+    ).first()
+    if vr is None:
+        vr = VerificationRequest.objects.create(
+            user=user,
+            kyc_profile=kyc,
+            kind=kind,
+            status=VerificationStatus.PENDING,
+            sla_due_at=sla_due_at,
+            submitted_at=timezone.now(),
+            checks=checks,
+        )
+    else:
+        vr.kind = kind
+        vr.status = VerificationStatus.PENDING
+        vr.sla_due_at = sla_due_at
+        vr.submitted_at = timezone.now()
+        vr.decided_at = None
+        vr.decided_by = None
+        vr.decision_reason = ""
+        vr.decision_note = ""
+        vr.requested_items = []
+        vr.checks = checks
+        vr.save()
+
+    AuditLog.objects.create(actor=user, action="kyc.submitted", entity_type="kyc", entity_id=str(kyc.pk))
+
+    # Notify admins
+    admins = User.objects.filter(role=Role.ADMIN, is_staff=True, status=UserStatus.ACTIVE)
+    name = user.full_name or user.email or user.phone or "User"
+    for adm in admins:
+        notify(
+            user_id=adm.id,
+            type="verification_submitted",
+            title="New KYC Verification Submitted",
+            body=f"{kind.title()} verification submitted for {name}",
+            data={"verificationId": str(vr.id), "kind": kind, "userId": str(user.id)},
+        )
 
 
 def review(*, actor: User, kyc_id: UUID, approve: bool, reason: str = "") -> KycProfile:
@@ -405,6 +450,8 @@ def review(*, actor: User, kyc_id: UUID, approve: bool, reason: str = "") -> Kyc
         if kyc.user_id == actor.pk:
             raise Forbidden("You can't review your own KYC.", code="KYC_SELF_REVIEW")
         kyc.status = KycStatus.VERIFIED if approve else KycStatus.REJECTED
+        kyc.pan_verified = approve and kyc.pan_done
+        kyc.bank_verified = approve and kyc.bank_done
         kyc.rejection_reason = "" if approve else reason.strip()[:300]
         kyc.review_message = "" if approve else reason.strip()[:300]
         kyc.reviewed_at = timezone.now()
@@ -416,6 +463,8 @@ def review(*, actor: User, kyc_id: UUID, approve: bool, reason: str = "") -> Kyc
                 "review_message",
                 "reviewed_at",
                 "reviewed_by",
+                "pan_verified",
+                "bank_verified",
                 "updated_at",
             ]
         )

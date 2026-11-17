@@ -56,7 +56,6 @@ class CampaignListCreateView(ListAPIView):
     def post(self, request: Request) -> Response:
         if not IsBrand().has_permission(request, self):
             raise NotFound()
-        require_kyc(request.user)
         data = CampaignInput(data=request.data)
         data.is_valid(raise_exception=True)
         campaign = services.create_campaign(brand=my_brand(request), data=data.validated_data)
