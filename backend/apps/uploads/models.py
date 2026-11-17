@@ -28,7 +28,7 @@ class KindRule:
 
 
 RULES: dict[str, KindRule] = {
-    UploadKind.AVATAR: KindRule(IMAGE_TYPES, 10 * MB, public=True, role="creator"),
+    UploadKind.AVATAR: KindRule(IMAGE_TYPES, 10 * MB, public=True, role=None),
     UploadKind.BRAND_LOGO: KindRule(IMAGE_TYPES, 10 * MB, public=True, role="brand"),
     UploadKind.GALLERY: KindRule(IMAGE_TYPES, 10 * MB, public=True, role="creator"),
     UploadKind.DELIVERABLE: KindRule(

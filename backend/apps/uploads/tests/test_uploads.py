@@ -76,8 +76,9 @@ def test_presign_rules(creator: Any, fake_storage: Any, kind: str, ctype: str, s
 
 
 def test_brand_cannot_upload_creator_kinds(brand: Any, fake_storage: Any) -> None:
-    assert start(brand, "avatar", "image/png", 10).json()["error"]["code"] == "UPLOAD_KIND_NOT_ALLOWED"
+    assert start(brand, "gallery", "image/png", 10).json()["error"]["code"] == "UPLOAD_KIND_NOT_ALLOWED"
     assert start(brand, "brand_logo", "image/png", 10).status_code == 201
+    assert start(brand, "avatar", "image/png", 10).status_code == 201
 
 
 def test_complete_requires_file_and_ownership(creator: Any, make_creator: Any, fake_storage: Any) -> None:

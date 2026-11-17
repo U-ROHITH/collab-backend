@@ -17,6 +17,9 @@ _BRAND_FIELDS = {
     "gstin": "gstin",
     "stateCode": "state_code",
     "billingAddress": "billing_address",
+    "logoUrl": "logo_url",
+    "logo": "logo_url",
+    "avatarUrl": "logo_url",
 }
 
 
@@ -26,6 +29,14 @@ def create_brand_for_user(*, user: User, name: str) -> Brand:
 
 def update_brand(*, brand: Brand, data: dict[str, Any]) -> Brand:
     data = dict(data)
+    logo_upload_id = data.pop("logoUploadId", None)
+    if logo_upload_id:
+        from apps.uploads.models import Upload
+
+        upload = Upload.objects.filter(pk=logo_upload_id, owner=brand.owner).first()
+        if upload and upload.public_url:
+            data["logoUrl"] = upload.public_url
+
     if "category" in data and "industry" not in data:
         data["industry"] = data["category"]
 

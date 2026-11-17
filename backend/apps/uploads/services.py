@@ -151,7 +151,10 @@ def _attach_profile_image(user: User, upload: Upload) -> None:
 
     with transaction.atomic():
         if upload.kind == UploadKind.AVATAR:
-            Creator.objects.filter(user=user).update(avatar_url=upload.public_url)
+            if user.role == Role.CREATOR or Creator.objects.filter(user=user).exists():
+                Creator.objects.filter(user=user).update(avatar_url=upload.public_url)
+            if user.role == Role.BRAND or Brand.objects.filter(owner=user).exists():
+                Brand.objects.filter(owner=user).update(logo_url=upload.public_url)
         elif upload.kind == UploadKind.BRAND_LOGO:
             Brand.objects.filter(owner=user).update(logo_url=upload.public_url)
         elif upload.kind == UploadKind.GALLERY:

@@ -178,7 +178,7 @@ class CreatorCardOutput(serializers.ModelSerializer):
     primaryPlatform = serializers.CharField(source="primary_platform", allow_null=True)  # noqa: N815
     repliesWithin = RepliesWithinField(source="replies_within", allow_null=True)  # noqa: N815
     followerCount = serializers.SerializerMethodField()  # noqa: N815
-    avatarUrl = serializers.CharField(source="avatar_url")  # noqa: N815
+    avatarUrl = serializers.SerializerMethodField()  # noqa: N815
     rating = serializers.FloatField()
     reviewCount = serializers.IntegerField(source="rating_count")  # noqa: N815
     startingPrice = serializers.SerializerMethodField()  # noqa: N815
@@ -217,6 +217,9 @@ class CreatorCardOutput(serializers.ModelSerializer):
         )
 
     # ── helpers ──────────────────────────────────────────────────────────────
+
+    def get_avatarUrl(self, obj: Creator) -> str | None:  # noqa: N802
+        return obj.avatar_url or None
 
     def _social(self, obj: Creator) -> dict:
         return obj.social_media_links if isinstance(obj.social_media_links, dict) else {}
@@ -330,6 +333,9 @@ class CreatorProfileInput(StrictSerializer):
     repliesWithin = RepliesWithinField(required=False)  # noqa: N815
     dob = serializers.DateField(required=False, allow_null=True)
     gender = serializers.CharField(max_length=40, required=False, allow_blank=True)
+    avatarUrl = serializers.CharField(max_length=600, required=False, allow_blank=True, allow_null=True)  # noqa: N815
+    avatar = serializers.CharField(max_length=600, required=False, allow_blank=True, allow_null=True)
+    avatarUploadId = serializers.UUIDField(required=False, allow_null=True)  # noqa: N815
     followerCount = FormIntegerField(min_value=0, max_value=2_000_000_000, required=False, allow_null=True)  # noqa: N815
     instagram = PlatformInputField(platform="instagram", required=False, allow_null=True)
     youtube = PlatformInputField(platform="youtube", required=False, allow_null=True)

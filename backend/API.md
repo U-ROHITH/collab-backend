@@ -243,18 +243,20 @@ Status flow: `awaiting_payment → funded → draft_submitted ⇄ revision_reque
 
 ## File uploads
 Three steps. Files go from the browser straight to storage; the API never streams them.
-1. `POST /v1/uploads/` with `{kind, contentType, size}` → `{upload, uploadUrl, method: "PUT", headers}`
+1. `POST /v1/uploads/` with `{kind, contentType, size}` (also accepts `mimeType`, `sizeBytes` / `fileSize`, and optional `filename`) → `{upload, uploadUrl, method: "PUT", headers}`
 2. `PUT` the file to `uploadUrl` with those headers (no auth header). The URL works once.
 3. `POST /v1/uploads/{id}/complete/` → `{id, kind, status, contentType, size, url}`
 
 | Kind | Who | Types | Max | Visibility |
 |---|---|---|---|---|
-| `avatar` | creator | jpeg, png, webp | 10 MB | public; re-encoded to WebP; sets `avatarUrl` |
+| `avatar` | creator / brand | jpeg, png, webp | 10 MB | public; re-encoded to WebP; sets `avatarUrl` (and `logoUrl` for brands) |
 | `gallery` | creator | jpeg, png, webp | 10 MB (12 images) | public; shows as `gallery` on the profile |
-| `brand_logo` | brand | jpeg, png, webp | 10 MB | public; sets `logoUrl` |
+| `brand_logo` | brand | jpeg, png, webp | 10 MB | public; sets `logoUrl` and `avatarUrl` |
 | `deliverable` | creator | images, pdf, mp4, mov | 50 MB | private; attach with `fileUploadId` on `/orders/{id}/deliverables/` |
 | `chat_attachment` | brand/creator | images, pdf | 10 MB | private; attach with `attachmentUploadId` on a message |
 | `kyc_document` | brand/creator | jpeg, png, webp, pdf | 10 MB | private (owner + ops only); attach with `uploadId` on `PUT /v1/kyc/id/` |
+
+> Profile picture updates: After completion, avatars are auto-attached to the profile. You can also link an uploaded image explicitly via `PATCH /v1/creators/me/` (`{avatarUrl}` or `{avatarUploadId}`) and `PATCH /v1/brands/me/` (`{logoUrl}`, `{avatarUrl}`, or `{logoUploadId}`). `GET /v1/auth/me/` always returns `avatarUrl` for the logged-in user.
 
 | Method | Path | Notes |
 |---|---|---|

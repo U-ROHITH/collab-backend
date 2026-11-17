@@ -2,7 +2,7 @@ from typing import Any
 
 from rest_framework import serializers
 
-from apps.brands.models import GSTIN_REGEX, Brand, BrandList, CartItem
+from apps.brands.models import Brand, BrandList, CartItem
 from apps.core.serializers import StrictSerializer, UsageRightsSerializer
 from apps.creators.serializers import CreatorCardOutput, PackageOutput
 
@@ -12,7 +12,8 @@ class BrandOutput(serializers.ModelSerializer):
     stateCode = serializers.CharField(source="state_code")  # noqa: N815
     billingAddress = serializers.SerializerMethodField()  # noqa: N815
     billingEmail = serializers.SerializerMethodField()  # noqa: N815
-    logoUrl = serializers.CharField(source="logo_url")  # noqa: N815
+    logoUrl = serializers.SerializerMethodField()  # noqa: N815
+    avatarUrl = serializers.SerializerMethodField()  # noqa: N815
 
     class Meta:
         model = Brand
@@ -22,12 +23,19 @@ class BrandOutput(serializers.ModelSerializer):
             "website",
             "industry",
             "logoUrl",
+            "avatarUrl",
             "legalName",
             "gstin",
             "stateCode",
             "billingAddress",
             "billingEmail",
         )
+
+    def get_logoUrl(self, obj: Brand) -> str | None:  # noqa: N802
+        return obj.logo_url or None
+
+    def get_avatarUrl(self, obj: Brand) -> str | None:  # noqa: N802
+        return obj.logo_url or None
 
     def get_billingAddress(self, obj: Brand) -> Any:  # noqa: N802
         if isinstance(obj.billing_address, dict) and "raw" in obj.billing_address:
@@ -60,6 +68,10 @@ class BrandInput(StrictSerializer):
     stateCode = serializers.CharField(max_length=10, required=False, allow_blank=True)  # noqa: N815
     billingAddress = serializers.JSONField(required=False)  # noqa: N815
     billingEmail = serializers.EmailField(required=False, allow_blank=True, allow_null=True)  # noqa: N815
+    logoUrl = serializers.CharField(max_length=600, required=False, allow_blank=True, allow_null=True)  # noqa: N815
+    logo = serializers.CharField(max_length=600, required=False, allow_blank=True, allow_null=True)
+    avatarUrl = serializers.CharField(max_length=600, required=False, allow_blank=True, allow_null=True)  # noqa: N815
+    logoUploadId = serializers.UUIDField(required=False, allow_null=True)  # noqa: N815
 
     def validate_website(self, value: str) -> str:
         value = value.strip()

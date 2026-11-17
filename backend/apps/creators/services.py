@@ -19,6 +19,8 @@ _PROFILE_FIELDS = {
     "repliesWithin": "replies_within",
     "dob": "dob",
     "gender": "gender",
+    "avatarUrl": "avatar_url",
+    "avatar": "avatar_url",
 }
 _PACKAGE_FIELDS = {
     "title": "title",
@@ -67,6 +69,14 @@ def _merge_platforms(creator: Creator, social_links: dict[str, Any], platforms: 
 
 def update_creator_profile(*, creator: Creator, data: dict[str, Any]) -> Creator:
     data = dict(data)
+    avatar_upload_id = data.pop("avatarUploadId", None)
+    if avatar_upload_id:
+        from apps.uploads.models import Upload
+
+        upload = Upload.objects.filter(pk=avatar_upload_id, owner=creator.user).first()
+        if upload and upload.public_url:
+            data["avatarUrl"] = upload.public_url
+
     city = data.pop("city", None)
     region = data.pop("region", None)
     if city or region:
