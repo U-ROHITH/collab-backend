@@ -3,7 +3,7 @@ from typing import Any
 from rest_framework.permissions import BasePermission
 from rest_framework.request import Request
 
-from apps.identity.models import Role
+from apps.identity.models import AdminRole, Role
 
 
 class _HasRole(BasePermission):
@@ -39,3 +39,44 @@ class IsApprovedCreator(IsCreator):
             return False
         creator = getattr(request.user, "creator", None)
         return bool(creator and creator.is_approved)
+
+
+class IsAdminUser(BasePermission):
+    """Requires the user to be authenticated, have role=ADMIN, and is_staff=True.
+    Returns 403 FORBIDDEN for non-admins.
+    Optionally checks for specific allowed admin_roles."""
+
+    message = "Administrative access required."
+    code = "FORBIDDEN"
+
+    def __init__(self, *roles: str) -> None:
+        self.allowed_roles = roles
+
+    def has_permission(self, request: Request, view: Any) -> bool:
+        user = request.user
+        if not (user and user.is_authenticated):
+            return False
+
+        if user.role != Role.ADMIN or not user.is_staff:
+            return False
+
+        # Role check if specific roles are required (either on permission or view)
+        roles = self.allowed_roles or getattr(view, "required_admin_roles", None)
+        if roles:
+            # super_admin always satisfies any admin role requirement
+            if getattr(user, "admin_role", None) == AdminRole.SUPER_ADMIN:
+                return True
+            return getattr(user, "admin_role", None) in roles
+
+        return True
+
+
+def RequireAdminRoles(*roles: str) -> type[IsAdminUser]:
+    """Helper factory for requiring specific admin roles."""
+
+    class _ConfiguredAdminRole(IsAdminUser):
+        def __init__(self) -> None:
+            super().__init__(*roles)
+
+    return _ConfiguredAdminRole
+

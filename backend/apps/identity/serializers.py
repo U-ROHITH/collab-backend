@@ -176,3 +176,46 @@ class PasswordChangeInput(StrictSerializer):
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         check_new_password(attrs, self.context.get("user"), required=True)
         return attrs
+
+
+class AdminUserOutput(serializers.ModelSerializer):
+    fullName = serializers.CharField(source="full_name")  # noqa: N815
+    adminRole = serializers.CharField(source="admin_role")  # noqa: N815
+
+    class Meta:
+        model = User
+        fields = ("id", "email", "phone", "fullName", "role", "adminRole", "status")
+
+
+class AdminLoginInput(StrictSerializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(max_length=128, trim_whitespace=False)
+
+
+class AdminLoginOutput(serializers.Serializer):
+    mfaRequired = serializers.BooleanField()  # noqa: N815
+    mfaToken = serializers.CharField(allow_null=True)  # noqa: N815
+    user = AdminUserOutput()
+
+
+class AdminMfaVerifyInput(StrictSerializer):
+    mfaToken = serializers.CharField(required=False, allow_blank=True)  # noqa: N815
+    email = serializers.EmailField(required=False, allow_blank=True)
+    password = serializers.CharField(max_length=128, required=False, allow_blank=True, trim_whitespace=False)
+    code = serializers.RegexField(r"^\d{6}$")
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        if not attrs.get("mfaToken") and not (attrs.get("email") and attrs.get("password")):
+            raise serializers.ValidationError("Either mfaToken or (email and password) is required.")
+        return attrs
+
+
+class AdminAuthTokensOutput(serializers.Serializer):
+    access = serializers.CharField()
+    refresh = serializers.CharField()
+    user = AdminUserOutput()
+
+
+class AdminLogoutInput(StrictSerializer):
+    refresh = serializers.CharField(required=False, allow_blank=True)
+

@@ -7,6 +7,7 @@ from apps.core.views import healthz, readyz
 
 v1 = [
     path("auth/", include("apps.identity.urls")),
+    path("admin/", include("apps.identity.admin_urls")),
     path("", include("apps.brands.urls")),
     path("", include("apps.creators.urls")),
     path("", include("apps.campaigns.urls")),

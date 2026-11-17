@@ -285,6 +285,23 @@ Upload the ID document first: `POST /v1/uploads/` with `kind: "kyc_document"` (J
 
 Steps can be edited while `not_started`, `in_progress` or `rejected`; otherwise `409 KYC_LOCKED`. Ops verify or reject in the Django admin. The user gets a `kyc_verified` / `kyc_rejected` notification, and on rejection `rejectionReason` says what to fix.
 
+## Super Admin API (/v1/admin/)
+Custom management portal endpoints with role-based access control (`super_admin`, `trust_safety`, `finance`), mandatory 2FA TOTP verification, and SHA-256 tamper-evident audit logging. Non-admin users receive `403 FORBIDDEN`.
+
+| Method | Path | Auth / Role | Description |
+|---|---|---|---|
+| POST | `/v1/admin/auth/login/` | anyone | `{email, password}` → `{mfaRequired: true, mfaToken, user}`. Validates admin status and prompts for MFA. |
+| POST | `/v1/admin/auth/mfa/verify/` | anyone (MFA session) | `{code, mfaToken}` → `{access, refresh, user}`. Verifies TOTP and issues JWT with `aal: "aal2"` and admin claims. |
+| POST | `/v1/admin/auth/logout/` | Admin (`IsAdminUser`) | `{refresh}` → `{success: true, message: "..."}`. Blacklists refresh token and records `admin.logout` in audit log. |
+
+### Admin Roles
+- `super_admin`: Full access across all admin modules (creator moderation, dispute resolutions, financial overrides, user management).
+- `trust_safety`: Creator approvals, KYC verification, dispute mediation, and abuse reports.
+- `finance`: Escrow inspection, payout batches, refund approvals, and TDS/GST reconciliation.
+
+### Audit Logging
+Every sensitive state change and auth lifecycle action is executed within `transaction.atomic()` via `record_audit(admin, action, target, detail)`, storing an immutable SHA-256 entry hash and returning `{ id, hash }`.
+
 ## Live updates (WebSocket)
 `POST /v1/realtime/ticket/` → `{ticket}` (valid 30 s, single use), then connect to `wss://collab-api-ewju.onrender.com/ws/?ticket=<ticket>`.
 Events: `{event: "connected"}`, `{event: "new_message", conversationId, message}`, `{event: "notification", notification}`. Send `{"type":"ping"}` → `{"type":"pong"}`. On disconnect, get a new ticket and reconnect.

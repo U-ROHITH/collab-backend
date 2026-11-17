@@ -24,6 +24,9 @@ coverage/
 
 # Django collectstatic output
 backend/staticfiles/
+backend/media/
+media/
+render_logs.sh
 
 # Python
 __pycache__/

@@ -1,3 +1,5 @@
+from typing import Any
+
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin
 from django.db import models
@@ -11,6 +13,12 @@ class Role(models.TextChoices):
     BRAND = "brand", "Brand"
     CREATOR = "creator", "Creator"
     ADMIN = "admin", "Admin"
+
+
+class AdminRole(models.TextChoices):
+    SUPER_ADMIN = "super_admin", "Super Admin"
+    TRUST_SAFETY = "trust_safety", "Trust & Safety"
+    FINANCE = "finance", "Finance"
 
 
 class UserStatus(models.TextChoices):
@@ -36,6 +44,7 @@ class UserManager(BaseUserManager["User"]):
         return user
 
     def create_superuser(self, email: str, password: str, **extra: object) -> "User":
+        extra.setdefault("admin_role", AdminRole.SUPER_ADMIN)
         extra.update(is_staff=True, is_superuser=True, role=Role.ADMIN)
         return self.create_user(email=email, password=password, **extra)
 
@@ -45,6 +54,9 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
     phone = models.CharField(max_length=16, unique=True, null=True, blank=True)  # noqa: DJ001 - NULL keeps unique() usable
     full_name = models.CharField(max_length=120, blank=True)
     role = models.CharField(max_length=16, choices=Role.choices, null=True, blank=True)  # noqa: DJ001 - NULL = not onboarded
+    admin_role = models.CharField(
+        max_length=32, choices=AdminRole.choices, null=True, blank=True, db_index=True
+    )  # noqa: DJ001 - NULL = not an admin
     status = models.CharField(max_length=16, choices=UserStatus.choices, default=UserStatus.ACTIVE)
     is_staff = models.BooleanField(default=False)
     date_joined = models.DateTimeField(default=timezone.now)
@@ -61,6 +73,10 @@ class User(BaseModel, AbstractBaseUser, PermissionsMixin):
                 condition=Q(email__isnull=False) | Q(phone__isnull=False), name="user_has_email_or_phone"
             ),
             models.CheckConstraint(condition=Q(role__isnull=True) | Q(role__in=Role.values), name="user_role_valid"),
+            models.CheckConstraint(
+                condition=Q(admin_role__isnull=True) | Q(admin_role__in=AdminRole.values),
+                name="user_admin_role_valid",
+            ),
             models.CheckConstraint(condition=Q(status__in=UserStatus.values), name="user_status_valid"),
         ]
 
@@ -111,6 +127,19 @@ class AuditLog(BaseModel):
     entity_type = models.CharField(max_length=64)
     entity_id = models.CharField(max_length=64)
     metadata = models.JSONField(default=dict, blank=True)
+    hash = models.CharField(max_length=64, blank=True, db_index=True)
+
+    @property
+    def admin(self) -> "User | None":
+        return self.actor
+
+    @property
+    def target(self) -> str:
+        return f"{self.entity_type}:{self.entity_id}" if self.entity_type else self.entity_id
+
+    @property
+    def detail(self) -> dict[str, Any]:
+        return self.metadata
 
     class Meta:
         indexes = [models.Index(fields=["entity_type", "entity_id"])]

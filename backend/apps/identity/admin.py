@@ -15,8 +15,8 @@ admin.site.site_header = "Collab Ops"
 
 @admin.register(User)
 class UserAdmin(admin.ModelAdmin):
-    list_display = ("id", "email", "phone", "role", "status", "is_staff", "created_at")
-    list_filter = ("role", "status", "is_staff")
+    list_display = ("id", "email", "phone", "role", "admin_role", "status", "is_staff", "created_at")
+    list_filter = ("role", "admin_role", "status", "is_staff")
     search_fields = ("email", "phone", "full_name")
     readonly_fields = ("id", "password", "last_login", "created_at", "updated_at", "role", "is_superuser")
     exclude = ("user_permissions",)
@@ -44,7 +44,7 @@ class UserAdmin(admin.ModelAdmin):
 
 @admin.register(AuditLog)
 class AuditLogAdmin(admin.ModelAdmin):
-    list_display = ("created_at", "actor", "action", "entity_type", "entity_id")
+    list_display = ("created_at", "actor", "action", "entity_type", "entity_id", "hash")
     list_filter = ("action", "entity_type")
 
     def has_add_permission(self, request: object) -> bool:

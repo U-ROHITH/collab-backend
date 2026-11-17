@@ -1,14 +1,17 @@
 import hashlib
 import hmac
+import json
 import logging
 import re
 import secrets
 from dataclasses import dataclass
 from datetime import timedelta
+from typing import Any
 from uuid import UUID
 
 from django.conf import settings
 from django.contrib.auth.hashers import make_password
+from django.core import signing
 from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -16,9 +19,9 @@ from rest_framework.exceptions import ValidationError
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from apps.core.exceptions import Conflict, DomainError, TooManyRequests
+from apps.core.exceptions import Conflict, DomainError, Forbidden, TooManyRequests
 from apps.identity import google, providers
-from apps.identity.models import AuditLog, OtpChallenge, OtpChannel, OtpPurpose, Role, User, UserStatus
+from apps.identity.models import AdminRole, AuditLog, OtpChallenge, OtpChannel, OtpPurpose, Role, User, UserStatus
 
 logger = logging.getLogger(__name__)
 _INDIAN_MOBILE = re.compile(r"^(?:\+?91)?([6-9]\d{9})$")
@@ -425,17 +428,175 @@ def complete_signup(
     return locked
 
 
-def grant_admin(*, email: str, password: str) -> User:
+def record_audit(
+    admin: User | None = None,
+    action: str = "",
+    target: Any = None,
+    detail: dict[str, Any] | None = None,
+    *,
+    actor: User | None = None,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    """Record an audit log entry inside transaction.atomic(), returning { id, hash }."""
+    actor_user = admin or actor
+    meta = dict(detail if detail is not None else (metadata or {}))
+
+    if target is not None:
+        if hasattr(target, "_meta"):
+            e_type = target._meta.model_name
+            e_id = str(target.pk)
+        elif isinstance(target, tuple | list) and len(target) == 2:
+            e_type, e_id = str(target[0]), str(target[1])
+        elif isinstance(target, dict):
+            e_type = str(target.get("type", "target"))
+            e_id = str(target.get("id", ""))
+        elif isinstance(target, str):
+            if ":" in target:
+                e_type, e_id = target.split(":", 1)
+            else:
+                e_type, e_id = "target", target
+        else:
+            e_type, e_id = type(target).__name__.lower(), str(target)
+    else:
+        e_type = entity_type or ""
+        e_id = entity_id or ""
+
+    with transaction.atomic():
+        log = AuditLog(
+            actor=actor_user,
+            action=action,
+            entity_type=e_type,
+            entity_id=e_id,
+            metadata=meta,
+        )
+        log.save()
+        payload = (
+            f"{log.id}:"
+            f"{log.created_at.isoformat() if log.created_at else ''}:"
+            f"{actor_user.id if actor_user else ''}:"
+            f"{action}:{e_type}:{e_id}:"
+            f"{json.dumps(meta, sort_keys=True)}"
+        )
+        entry_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        log.hash = entry_hash
+        log.save(update_fields=["hash"])
+
+    return {"id": str(log.id), "hash": entry_hash}
+
+
+MFA_CHALLENGE_TIMEOUT_SECONDS = 600  # 10 minutes
+
+
+def create_admin_mfa_token(user: User) -> str:
+    signer = signing.TimestampSigner(salt="admin-mfa")
+    return signer.sign(str(user.id))
+
+
+def verify_admin_mfa_token(token: str, max_age: int = MFA_CHALLENGE_TIMEOUT_SECONDS) -> User:
+    signer = signing.TimestampSigner(salt="admin-mfa")
+    try:
+        user_id = signer.unsign(token, max_age=max_age)
+    except (signing.BadSignature, signing.SignatureExpired):
+        raise OtpInvalid("Invalid or expired MFA session.") from None
+    user = User.objects.filter(pk=user_id, status=UserStatus.ACTIVE).first()
+    if not user or user.role != Role.ADMIN or not user.is_staff:
+        raise Forbidden("Administrative access required.", code="FORBIDDEN")
+    return user
+
+
+def issue_admin_tokens(user: User) -> AuthResult:
+    refresh = RefreshToken.for_user(user)
+    refresh["role"] = Role.ADMIN
+    refresh["admin_role"] = user.admin_role or AdminRole.SUPER_ADMIN
+    refresh["is_staff"] = True
+    refresh["aal"] = "aal2"
+    refresh["amr"] = ["totp"]
+    refresh["auth_time"] = int(timezone.now().timestamp())
+    refresh["pwv"] = password_version(user)
+    return AuthResult(user=user, access=str(refresh.access_token), refresh=str(refresh))
+
+
+def login_admin(*, email: str, password: str, ip: str | None = None) -> dict[str, Any]:
+    norm_email = (email or "").strip().lower()
+    if not norm_email:
+        raise AuthInvalid()
+    user = User.objects.filter(email__iexact=norm_email).first()
+
+    if not user or not user.check_password(password):
+        raise AuthInvalid()
+
+    # Non-admins get 403 FORBIDDEN
+    if user.role != Role.ADMIN or not user.is_staff:
+        raise Forbidden("This portal is restricted to Linkloom administrators.", code="FORBIDDEN")
+
+    if not user.is_active:
+        raise Forbidden("Account is suspended or deactivated.", code="FORBIDDEN")
+
+    from django_otp.plugins.otp_totp.models import TOTPDevice
+
+    device = TOTPDevice.objects.filter(user=user, confirmed=True).first()
+    if not device:
+        device = TOTPDevice.objects.create(user=user, name="default", confirmed=True)
+
+    mfa_token = create_admin_mfa_token(user)
+    record_audit(admin=user, action="admin.login_mfa_prompted", target=user, detail={"email": user.email, "ip": ip})
+
+    return {
+        "mfaRequired": True,
+        "mfaToken": mfa_token,
+        "user": user,
+    }
+
+
+def verify_admin_mfa(
+    *,
+    code: str,
+    mfa_token: str | None = None,
+    email: str | None = None,
+    password: str | None = None,
+    ip: str | None = None,
+) -> AuthResult:
+    if mfa_token:
+        user = verify_admin_mfa_token(mfa_token)
+    elif email and password:
+        norm_email = email.strip().lower()
+        user = User.objects.filter(email__iexact=norm_email).first()
+        if not user or not user.check_password(password):
+            raise AuthInvalid()
+        if user.role != Role.ADMIN or not user.is_staff:
+            raise Forbidden("This portal is restricted to Linkloom administrators.", code="FORBIDDEN")
+    else:
+        raise DomainError("Either mfaToken or (email and password) is required.", code="VALIDATION_ERROR")
+
+    if not user.is_active:
+        raise Forbidden("Account is suspended or deactivated.", code="FORBIDDEN")
+
+    from django_otp.plugins.otp_totp.models import TOTPDevice
+
+    device = TOTPDevice.objects.filter(user=user, confirmed=True).first()
+    if not device or not device.verify_token(code):
+        record_audit(admin=user, action="admin.mfa_failed", target=user, detail={"ip": ip})
+        raise OtpInvalid("Invalid or expired 2FA code.")
+
+    tokens = issue_admin_tokens(user)
+    record_audit(admin=user, action="admin.login", target=user, detail={"mfa_method": "totp", "ip": ip})
+    return tokens
+
+
+def grant_admin(*, email: str, password: str, admin_role: str = AdminRole.SUPER_ADMIN) -> User:
     """Used only by the `grant_admin` management command."""
     with transaction.atomic():
         user = User.objects.filter(email=email.lower()).first()
         if user is None:
-            user = User.objects.create_superuser(email=email.lower(), password=password)
+            user = User.objects.create_superuser(email=email.lower(), password=password, admin_role=admin_role)
         else:
             user.role, user.is_staff, user.is_superuser = Role.ADMIN, True, True
+            user.admin_role = admin_role
             user.set_password(password)
             user.save()
-        AuditLog.objects.create(actor=None, action="admin.granted", entity_type="user", entity_id=str(user.pk))
+        record_audit(admin=None, action="admin.granted", target=user, detail={"role": admin_role})
     return user
 
 
