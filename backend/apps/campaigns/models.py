@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django.db.models import F, Q
 
@@ -12,6 +13,14 @@ class CampaignStatus(models.TextChoices):
     CANCELLED = "cancelled"
 
 
+class ModerationStatus(models.TextChoices):
+    PENDING_REVIEW = "pending_review"
+    LIVE = "live"
+    REJECTED = "rejected"
+    HIDDEN = "hidden"
+    REMOVED = "removed"
+
+
 class Campaign(BaseModel):
     brand = models.ForeignKey("brands.Brand", on_delete=models.PROTECT, related_name="campaigns")
     title = models.CharField(max_length=200)
@@ -24,6 +33,19 @@ class Campaign(BaseModel):
     status = models.CharField(max_length=12, choices=CampaignStatus.choices, default=CampaignStatus.OPEN)
     usage_rights = models.JSONField(default=dict)
 
+    moderation_status = models.CharField(
+        max_length=20, choices=ModerationStatus.choices, default=ModerationStatus.PENDING_REVIEW, db_index=True
+    )
+    submitted_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    posted_at = models.DateTimeField(null=True, blank=True)
+    changed_fields = models.JSONField(default=list, blank=True)
+    moderated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="moderated_campaigns"
+    )
+    moderated_at = models.DateTimeField(null=True, blank=True)
+    moderation_reason = models.CharField(max_length=500, blank=True)
+    rule_broken = models.CharField(max_length=120, blank=True)
+
     class Meta:
         ordering = ("-created_at",)
         constraints = [
@@ -32,8 +54,14 @@ class Campaign(BaseModel):
                 condition=Q(budget_min_paise__lte=F("budget_max_paise")), name="campaign_budget_range"
             ),
             models.CheckConstraint(condition=Q(status__in=CampaignStatus.values), name="campaign_status_valid"),
+            models.CheckConstraint(
+                condition=Q(moderation_status__in=ModerationStatus.values), name="campaign_moderation_status_valid"
+            ),
         ]
-        indexes = [models.Index(fields=["status", "closes_at"])]
+        indexes = [
+            models.Index(fields=["status", "closes_at"]),
+            models.Index(fields=["moderation_status", "submitted_at"]),
+        ]
 
 
 class BidStatus(models.TextChoices):
@@ -41,6 +69,7 @@ class BidStatus(models.TextChoices):
     SELECTED = "selected"
     REJECTED = "rejected"
     WITHDRAWN = "withdrawn"
+    HELD = "held"
 
 
 class Bid(BaseModel):

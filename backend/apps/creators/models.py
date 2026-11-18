@@ -61,6 +61,10 @@ class Creator(BaseModel):
     platform_stats = models.JSONField(default=dict, blank=True)
     rating_sum = models.PositiveIntegerField(default=0)
     rating_count = models.PositiveIntegerField(default=0)
+    badges = models.JSONField(default=list, blank=True)
+    featured = models.BooleanField(default=False, db_index=True)
+    featured_order = models.PositiveIntegerField(default=0, db_index=True)
+    tags = models.JSONField(default=list, blank=True)
 
     class Meta:
         ordering = ("-created_at",)
@@ -121,3 +125,18 @@ class CreatorMedia(BaseModel):
 
     class Meta:
         ordering = ("sort", "created_at")
+
+
+class Category(BaseModel):
+    name = models.CharField(max_length=60, unique=True)
+    slug = models.SlugField(max_length=80, unique=True)
+    description = models.TextField(blank=True, default="")
+    icon = models.CharField(max_length=60, blank=True, default="")
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ("name",)
+
+    def __str__(self) -> str:
+        return self.name
+

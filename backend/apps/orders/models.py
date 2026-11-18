@@ -52,10 +52,17 @@ class Order(BaseModel):
     brand_total_paise = models.BigIntegerField()
 
     funded_at = models.DateTimeField(null=True, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
     last_submitted_at = models.DateTimeField(null=True, blank=True)
     approved_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     cancelled_at = models.DateTimeField(null=True, blank=True)
+    released_at = models.DateTimeField(null=True, blank=True)
+    refunded_at = models.DateTimeField(null=True, blank=True)
+    status_before_dispute = models.CharField(max_length=24, blank=True, default="")
+    forced_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
 
     class Meta:
         ordering = ("-created_at",)
@@ -116,10 +123,24 @@ class DisputeStatus(models.TextChoices):
     RESOLVED = "resolved"
 
 
+class DisputeKind(models.TextChoices):
+    DISPUTE = "dispute", "Dispute"
+    PAYMENT_COMPLAINT = "payment_complaint", "Payment Complaint"
+
+
 class Dispute(BaseModel):
     order = models.ForeignKey(Order, on_delete=models.PROTECT, related_name="disputes")
     opened_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    kind = models.CharField(
+        max_length=32, choices=DisputeKind.choices, default=DisputeKind.DISPUTE, db_index=True
+    )
     reason = models.TextField(max_length=4000)
+    evidence_upload_ids = models.JSONField(default=list, blank=True)
+    sla_due_at = models.DateTimeField(null=True, blank=True)
+    counterparty_statement = models.TextField(max_length=4000, blank=True, default="")
+    counterparty_statement_at = models.DateTimeField(null=True, blank=True)
+    counterparty_upload_ids = models.JSONField(default=list, blank=True)
+    decision_metadata = models.JSONField(default=dict, blank=True)
     status = models.CharField(max_length=10, choices=DisputeStatus.choices, default=DisputeStatus.OPEN)
     resolution = models.TextField(max_length=4000, blank=True)
     resolved_by = models.ForeignKey(
@@ -133,13 +154,39 @@ class Dispute(BaseModel):
         ]
 
 
+class IdempotencyRecord(BaseModel):
+    key = models.CharField(max_length=255, unique=True, db_index=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    action = models.CharField(max_length=64)
+    response_code = models.PositiveSmallIntegerField(default=200)
+    response_body = models.JSONField(default=dict)
+
+    class Meta:
+        ordering = ("-created_at",)
+
+
+class ReviewStatus(models.TextChoices):
+    VISIBLE = "visible", "Visible"
+    FLAGGED = "flagged", "Flagged"
+    REMOVED = "removed", "Removed"
+
+
 class Review(BaseModel):
     order = models.OneToOneField(Order, on_delete=models.PROTECT, related_name="review")
     brand = models.ForeignKey("brands.Brand", on_delete=models.PROTECT, related_name="+")
     creator = models.ForeignKey("creators.Creator", on_delete=models.PROTECT, related_name="reviews")
     stars = models.PositiveSmallIntegerField()
     text = models.TextField(max_length=2000, blank=True)
+    status = models.CharField(
+        max_length=16, choices=ReviewStatus.choices, default=ReviewStatus.VISIBLE, db_index=True
+    )
+    flag_reason = models.CharField(max_length=255, blank=True, default="")
 
     class Meta:
         ordering = ("-created_at",)
-        constraints = [models.CheckConstraint(condition=Q(stars__gte=1, stars__lte=5), name="review_stars_range")]
+        constraints = [
+            models.CheckConstraint(condition=Q(stars__gte=1, stars__lte=5), name="review_stars_range"),
+            models.CheckConstraint(condition=Q(status__in=ReviewStatus.values), name="review_status_valid"),
+        ]

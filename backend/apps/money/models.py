@@ -101,3 +101,15 @@ class WalletTransaction(BaseModel):
 
     def __str__(self) -> str:
         return f"WalletTransaction({self.type}, amount={self.amount_paise}, after={self.balance_after_paise})"
+
+
+class PlatformRule(BaseModel):
+    key = models.CharField(max_length=64, unique=True, default="default")
+    commission_pct = models.DecimalField(max_digits=5, decimal_places=2, default="10.00")
+    gateway_pct = models.DecimalField(max_digits=5, decimal_places=2, default="2.00")
+
+    class Meta:
+        ordering = ("key",)
+
+    def __str__(self) -> str:
+        return f"PlatformRule({self.key}: commission={self.commission_pct}%, gateway={self.gateway_pct}%)"

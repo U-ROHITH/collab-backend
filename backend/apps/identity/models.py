@@ -1,3 +1,5 @@
+import hashlib
+import json
 from typing import Any
 
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
@@ -128,6 +130,32 @@ class AuditLog(BaseModel):
     entity_id = models.CharField(max_length=64)
     metadata = models.JSONField(default=dict, blank=True)
     hash = models.CharField(max_length=64, blank=True, db_index=True)
+    prev_hash = models.CharField(max_length=64, blank=True, default="", db_index=True)
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        is_new = self._state.adding
+        if is_new and not self.hash:
+            prev_log = AuditLog.objects.exclude(pk=self.pk).order_by("-created_at", "-id").first()
+            self.prev_hash = prev_log.hash if prev_log else ""
+            kwargs.pop("update_fields", None)
+            super().save(*args, **kwargs)
+            payload = (
+                f"{self.prev_hash}:"
+                f"{self.id}:"
+                f"{self.created_at.isoformat() if self.created_at else ''}:"
+                f"{self.actor_id or ''}:"
+                f"{self.action}:{self.entity_type}:{self.entity_id}:"
+                f"{json.dumps(self.metadata or {}, sort_keys=True)}"
+            )
+            self.hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+            super().save(update_fields=["hash", "prev_hash"])
+        else:
+            super().save(*args, **kwargs)
+
+    def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
+        from apps.core.exceptions import DomainError
+
+        raise DomainError("AuditLog entries are append-only and cannot be deleted.", code="AUDIT_LOG_IMMUTABLE")
 
     @property
     def admin(self) -> "User | None":
