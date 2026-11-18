@@ -7,7 +7,7 @@ from apps.core.parties import brand_public, creator_public
 from apps.core.serializers import HttpsURLField, StrictSerializer
 from apps.creators.serializers import money
 from apps.orders import state_machine
-from apps.orders.models import Deliverable, Order, OrderStatus, Review
+from apps.orders.models import Deliverable, Dispute, Order, OrderStatus, Review
 
 
 class OrderOutput(serializers.ModelSerializer):
@@ -151,3 +151,64 @@ class OrderListParams(StrictSerializer):
     status = serializers.ChoiceField(choices=OrderStatus.choices, required=False)
     limit = serializers.IntegerField(min_value=1, max_value=50, required=False)
     cursor = serializers.CharField(max_length=500, required=False)
+
+
+class DisputeCreateInput(StrictSerializer):
+    reason = serializers.CharField(max_length=4000, min_length=5)
+    kind = serializers.ChoiceField(
+        choices=[("dispute", "Dispute"), ("payment_complaint", "Payment Complaint")],
+        default="dispute",
+        required=False,
+    )
+    evidenceUploadIds = serializers.ListField(  # noqa: N815
+        child=serializers.UUIDField(),
+        required=False,
+        default=list,
+    )
+
+
+class DisputeResponseInput(StrictSerializer):
+    statement = serializers.CharField(max_length=4000, min_length=5)
+    evidenceUploadIds = serializers.ListField(  # noqa: N815
+        child=serializers.UUIDField(),
+        required=False,
+        default=list,
+    )
+
+
+class DisputeDetailOutput(serializers.ModelSerializer):
+    id = serializers.UUIDField()
+    orderId = serializers.UUIDField(source="order_id")  # noqa: N815
+    openedById = serializers.UUIDField(source="opened_by_id")  # noqa: N815
+    kind = serializers.CharField()
+    reason = serializers.CharField()
+    evidenceUploadIds = serializers.JSONField(source="evidence_upload_ids")  # noqa: N815
+    slaDueAt = serializers.DateTimeField(source="sla_due_at")  # noqa: N815
+    counterpartyStatement = serializers.CharField(source="counterparty_statement")  # noqa: N815
+    counterpartyStatementAt = serializers.DateTimeField(source="counterparty_statement_at")  # noqa: N815
+    counterpartyUploadIds = serializers.JSONField(source="counterparty_upload_ids")  # noqa: N815
+    status = serializers.CharField()
+    resolution = serializers.CharField()
+    resolvedById = serializers.UUIDField(source="resolved_by_id", allow_null=True)  # noqa: N815
+    resolvedAt = serializers.DateTimeField(source="resolved_at", allow_null=True)  # noqa: N815
+    createdAt = serializers.DateTimeField(source="created_at")  # noqa: N815
+
+    class Meta:
+        model = Dispute
+        fields = (
+            "id",
+            "orderId",
+            "openedById",
+            "kind",
+            "reason",
+            "evidenceUploadIds",
+            "slaDueAt",
+            "counterpartyStatement",
+            "counterpartyStatementAt",
+            "counterpartyUploadIds",
+            "status",
+            "resolution",
+            "resolvedById",
+            "resolvedAt",
+            "createdAt",
+        )

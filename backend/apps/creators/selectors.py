@@ -14,8 +14,15 @@ def _creator_detail_queryset() -> QuerySet[Creator]:
 
 
 def public_creators() -> QuerySet[Creator]:
-    """Only approved creators are ever visible in discovery."""
-    return _creator_detail_queryset().filter(approval_status=ApprovalStatus.APPROVED)
+    """Only approved creators with active accounts are visible in discovery, featured creators first."""
+    from apps.identity.models import UserStatus
+
+    return (
+        _creator_detail_queryset()
+        .filter(approval_status=ApprovalStatus.APPROVED)
+        .filter(Q(user__isnull=True) | Q(user__status=UserStatus.ACTIVE))
+        .order_by("-featured", "featured_order", "-rating_sum", "-created_at")
+    )
 
 
 def search_creators(params: dict[str, Any]) -> QuerySet[Creator]:

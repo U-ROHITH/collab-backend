@@ -6,7 +6,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.identity.permissions import IsBrandOrCreator, IsCreator
+from apps.identity.permissions import IsAdminUser, IsBrandOrCreator, IsCreator
 from apps.uploads import services
 from apps.uploads.serializers import DownloadUrlOutput, UploadCreatedOutput, UploadCreateInput, UploadOutput
 
@@ -46,7 +46,7 @@ class UploadCompleteView(APIView):
 
 
 class UploadDownloadUrlView(APIView):
-    permission_classes = [IsBrandOrCreator]
+    permission_classes = [IsBrandOrCreator | IsAdminUser]
 
     @extend_schema(responses=DownloadUrlOutput)
     def get(self, request: Request, upload_id: UUID) -> Response:

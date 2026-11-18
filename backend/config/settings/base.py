@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     "apps.kyc",
     "apps.realtime",
     "apps.money",
+    "apps.moderation",
 ]
 
 MIDDLEWARE = [
@@ -215,6 +216,17 @@ SPECTACULAR_SETTINGS = {
         "VerificationStatusEnum": "apps.kyc.models.VerificationStatus",
         "KycStatusEnum": "apps.kyc.models.KycStatus",
         "UploadKindEnum": "apps.uploads.models.UploadKind",
+        "ModerationStatusEnum": "apps.campaigns.models.ModerationStatus",
+        "CampaignStatusEnum": "apps.campaigns.models.CampaignStatus",
+        "ReviewStatusEnum": "apps.orders.models.ReviewStatus",
+        "AbuseTargetTypeEnum": "apps.moderation.models.AbuseTargetType",
+        "AbuseReportStatusEnum": "apps.moderation.models.AbuseReportStatus",
+        "BidAlertTypeEnum": "apps.moderation.models.BidAlertType",
+        "BidAlertSeverityEnum": "apps.moderation.models.BidAlertSeverity",
+        "BidAlertStatusEnum": "apps.moderation.models.BidAlertStatus",
+        "DisputeStatusEnum": "apps.orders.models.DisputeStatus",
+        "DisputeKindEnum": "apps.orders.models.DisputeKind",
+        "OrderStatusEnum": "apps.orders.models.OrderStatus",
     },
 }
 
@@ -223,6 +235,7 @@ DATA_ENCRYPTION_KEY = env("DATA_ENCRYPTION_KEY", default="")
 DATA_ENCRYPTION_KEY_VERSION = env.int("DATA_ENCRYPTION_KEY_VERSION", default=1)
 # Kill switch: when False, bids/offers/checkout/campaign creation no longer require verified KYC.
 KYC_ENFORCED = env.bool("KYC_ENFORCED", default=True)
+CAMPAIGN_MODERATION_ENFORCED = env.bool("CAMPAIGN_MODERATION_ENFORCED", default=True)
 # Payouts (Razorpay Route) aren't built. Stays False so the app hides withdraw/payout screens.
 PAYOUTS_ENABLED = False
 

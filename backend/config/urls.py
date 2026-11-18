@@ -18,6 +18,7 @@ v1 = [
     path("", include("apps.messaging.urls")),
     path("", include("apps.kyc.urls")),
     path("", include("apps.money.urls")),
+    path("", include("apps.moderation.urls")),
 ]
 
 urlpatterns = [

@@ -22,3 +22,5 @@ if _test_db_host not in ("localhost", "127.0.0.1", "postgres", ""):
     raise RuntimeError(f"Refusing to run tests against non-local database host {_test_db_host!r}.")
 
 DATA_ENCRYPTION_KEY = "test-only-encryption-key-not-a-secret"
+CAMPAIGN_MODERATION_ENFORCED = False
+

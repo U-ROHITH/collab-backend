@@ -1,16 +1,17 @@
 from typing import Any
 from uuid import UUID
 
+from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import Count, F, OuterRef, Q, QuerySet, Subquery
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from apps.brands.models import Brand
-from apps.campaigns.models import Bid, BidStatus, Campaign, CampaignStatus
+from apps.campaigns.models import Bid, BidStatus, Campaign, CampaignStatus, ModerationStatus
 from apps.core.exceptions import Conflict, DomainError, NotFound
 from apps.creators.models import Creator
-from apps.identity.models import Role, User
+from apps.identity.models import Role, User, UserStatus
 from apps.notifications.services import notify
 
 _CAMPAIGN_FIELDS = {
@@ -31,9 +32,15 @@ _BID_FIELDS = {
     "deliveryDays": "delivery_days",
 }
 
+REVIEWED_FIELDS = {"title", "brief", "deliverables", "budgetMin", "budgetMax", "usageRights", "platform"}
+
 
 def public_open_campaigns() -> QuerySet[Campaign]:
-    return Campaign.objects.filter(status=CampaignStatus.OPEN, closes_at__gt=timezone.now())
+    return Campaign.objects.filter(
+        status=CampaignStatus.OPEN,
+        moderation_status=ModerationStatus.LIVE,
+        closes_at__gt=timezone.now(),
+    )
 
 
 def sees_full_campaigns(user: User | None) -> bool:
@@ -106,7 +113,31 @@ def create_campaign(*, brand: Brand, data: dict[str, Any]) -> Campaign:
     _check_budget(data["budgetMin"], data["budgetMax"])
     if data["closesAt"] <= timezone.now():
         raise DomainError("Closing date must be in the future.", code="INVALID_CLOSES_AT")
-    return Campaign.objects.create(brand=brand, **{_CAMPAIGN_FIELDS[k]: v for k, v in data.items()})
+    fields = {_CAMPAIGN_FIELDS[k]: v for k, v in data.items()}
+    if getattr(settings, "CAMPAIGN_MODERATION_ENFORCED", True):
+        fields["moderation_status"] = ModerationStatus.PENDING_REVIEW
+        fields["submitted_at"] = timezone.now()
+        fields["changed_fields"] = []
+    else:
+        fields["moderation_status"] = ModerationStatus.LIVE
+        fields["submitted_at"] = timezone.now()
+        fields["posted_at"] = timezone.now()
+        fields["changed_fields"] = []
+    campaign = Campaign.objects.create(brand=brand, **fields)
+
+    # Notify admins if pending review
+    if campaign.moderation_status == ModerationStatus.PENDING_REVIEW:
+        admins = User.objects.filter(role=Role.ADMIN, is_staff=True, status=UserStatus.ACTIVE)
+        for adm in admins:
+            notify(
+                user_id=adm.id,
+                type="campaign_submitted",
+                title="New Campaign Submitted for Review",
+                body=f"Campaign '{campaign.title}' by {brand.name} requires moderation",
+                data={"campaignId": str(campaign.id), "brandId": str(brand.id)},
+            )
+
+    return campaign
 
 
 def update_campaign(*, brand: Brand, campaign_id: UUID, data: dict[str, Any]) -> Campaign:
@@ -116,13 +147,59 @@ def update_campaign(*, brand: Brand, campaign_id: UUID, data: dict[str, Any]) ->
             raise NotFound()
         if campaign.status in (CampaignStatus.CLOSED, CampaignStatus.CANCELLED):
             raise Conflict("Closed campaigns can't be edited.", code="CAMPAIGN_CLOSED")
+
+        actually_changed: list[str] = []
+        for key in REVIEWED_FIELDS:
+            if key in data:
+                db_field = _CAMPAIGN_FIELDS[key]
+                current_val = getattr(campaign, db_field)
+                new_val = data[key]
+                if current_val != new_val:
+                    actually_changed.append(key)
+
         changes = {_CAMPAIGN_FIELDS[k]: v for k, v in data.items()}
         if changes.get("status") not in (None, CampaignStatus.DRAFT, CampaignStatus.OPEN):
             raise DomainError("Use the close endpoint to close a campaign.", code="INVALID_STATUS")
         for field, value in changes.items():
             setattr(campaign, field, value)
         _check_budget(campaign.budget_min_paise, campaign.budget_max_paise)
-        campaign.save(update_fields=[*changes.keys(), "updated_at"])
+
+        re_review = False
+        if getattr(settings, "CAMPAIGN_MODERATION_ENFORCED", True):
+            if campaign.moderation_status == ModerationStatus.LIVE and actually_changed:
+                campaign.moderation_status = ModerationStatus.PENDING_REVIEW
+                campaign.submitted_at = timezone.now()
+                campaign.changed_fields = sorted(actually_changed)
+                # Freeze existing open bids
+                Bid.objects.filter(campaign=campaign, status=BidStatus.PENDING).update(status=BidStatus.HELD)
+                re_review = True
+            elif campaign.moderation_status == ModerationStatus.REJECTED:
+                campaign.moderation_status = ModerationStatus.PENDING_REVIEW
+                campaign.submitted_at = timezone.now()
+                campaign.changed_fields = sorted(actually_changed or list(data.keys()))
+                campaign.moderation_reason = ""
+                campaign.rule_broken = ""
+                re_review = True
+
+        update_fields = list(changes.keys())
+        update_fields.append("updated_at")
+        if re_review:
+            update_fields.extend(
+                ["moderation_status", "submitted_at", "changed_fields", "moderation_reason", "rule_broken"]
+            )
+        campaign.save(update_fields=list(set(update_fields)))
+
+        if re_review:
+            admins = User.objects.filter(role=Role.ADMIN, is_staff=True, status=UserStatus.ACTIVE)
+            for adm in admins:
+                notify(
+                    user_id=adm.id,
+                    type="campaign_submitted",
+                    title="Campaign Updated and Resubmitted for Review",
+                    body=f"Campaign '{campaign.title}' by {brand.name} requires re-moderation",
+                    data={"campaignId": str(campaign.id), "brandId": str(brand.id)},
+                )
+
     return campaign
 
 
@@ -138,13 +215,11 @@ def close_campaign(*, brand: Brand, campaign_id: UUID) -> Campaign:
 
 
 def _open_campaign_for_bidding(campaign_id: UUID) -> Campaign:
-    campaign = (
-        Campaign.objects.select_related("brand")
-        .filter(pk=campaign_id, status=CampaignStatus.OPEN, closes_at__gt=timezone.now())
-        .first()
-    )
-    if campaign is None:
+    campaign = Campaign.objects.select_related("brand").filter(pk=campaign_id).first()
+    if campaign is None or campaign.status != CampaignStatus.OPEN or campaign.closes_at <= timezone.now():
         raise NotFound("Campaign not found or no longer open.")
+    if campaign.moderation_status != ModerationStatus.LIVE:
+        raise Conflict("Campaign is not live for bidding.", code="CAMPAIGN_NOT_LIVE")
     return campaign
 
 
@@ -208,6 +283,8 @@ def select_bid(*, actor: User, brand: Brand, campaign_id: UUID, bid_id: UUID) ->
             raise NotFound()
         if bid.status != BidStatus.PENDING:
             raise Conflict("This bid can't be selected.", code="BID_NOT_PENDING")
+        if bid.campaign.moderation_status != ModerationStatus.LIVE:
+            raise Conflict("Campaign is not live.", code="CAMPAIGN_NOT_LIVE")
         if not bid.creator.is_approved:
             raise Conflict("This creator is not available.", code="CREATOR_UNAVAILABLE")
         bid.status = BidStatus.SELECTED

@@ -6,6 +6,7 @@ Callers must hold a row lock: Order.objects.select_for_update() inside transacti
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
+from typing import Any
 
 from django.utils import timezone
 
@@ -103,3 +104,29 @@ def transition(order: Order, event: str, role: str) -> tuple[str, str]:
     elif rule.to in (S.CANCELLED, S.REFUND_PENDING):
         order.cancelled_at = now
     return from_status, rule.to
+
+
+def force_release_order(order: Order, admin_user: Any) -> None:
+    """Admin force release escrow to creator."""
+    now = timezone.now()
+    order.status = S.COMPLETED
+    order.completed_at = now
+    order.released_at = now
+    order.forced_by = admin_user
+    order.version += 1
+
+
+def force_refund_order(order: Order, admin_user: Any) -> None:
+    """Admin force refund escrow to brand."""
+    now = timezone.now()
+    order.status = S.REFUNDED
+    order.refunded_at = now
+    order.forced_by = admin_user
+    order.version += 1
+
+
+def restore_order_status(order: Order, target_status: str) -> None:
+    """Restore order status after dispute resolution without money movement."""
+    order.status = target_status
+    order.version += 1
+

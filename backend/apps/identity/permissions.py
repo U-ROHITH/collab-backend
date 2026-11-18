@@ -3,7 +3,8 @@ from typing import Any
 from rest_framework.permissions import BasePermission
 from rest_framework.request import Request
 
-from apps.identity.models import AdminRole, Role
+from apps.core.exceptions import Forbidden
+from apps.identity.models import AdminRole, Role, UserStatus
 
 
 class _HasRole(BasePermission):
@@ -12,7 +13,13 @@ class _HasRole(BasePermission):
 
     def has_permission(self, request: Request, view: Any) -> bool:
         user = request.user
-        return bool(user and user.is_authenticated and user.role == self.role)
+        if not (user and user.is_authenticated):
+            return False
+        if getattr(user, "status", None) == UserStatus.SUSPENDED:
+            raise Forbidden("Account is suspended.", code="ACCOUNT_SUSPENDED")
+        if getattr(user, "status", None) == UserStatus.DEACTIVATED:
+            raise Forbidden("Account is deactivated.", code="ACCOUNT_DEACTIVATED")
+        return bool(user.role == self.role)
 
 
 class IsBrand(_HasRole):
@@ -28,7 +35,13 @@ class IsBrandOrCreator(BasePermission):
 
     def has_permission(self, request: Request, view: Any) -> bool:
         user = request.user
-        return bool(user and user.is_authenticated and user.role in (Role.BRAND, Role.CREATOR))
+        if not (user and user.is_authenticated):
+            return False
+        if getattr(user, "status", None) == UserStatus.SUSPENDED:
+            raise Forbidden("Account is suspended.", code="ACCOUNT_SUSPENDED")
+        if getattr(user, "status", None) == UserStatus.DEACTIVATED:
+            raise Forbidden("Account is deactivated.", code="ACCOUNT_DEACTIVATED")
+        return bool(user.role in (Role.BRAND, Role.CREATOR))
 
 
 class IsApprovedCreator(IsCreator):

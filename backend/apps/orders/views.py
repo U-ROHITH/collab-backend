@@ -18,6 +18,9 @@ from apps.orders.selectors import creator_earnings, orders_visible_to
 from apps.orders.serializers import (
     DeliverableInput,
     DeliverableOutput,
+    DisputeCreateInput,
+    DisputeDetailOutput,
+    DisputeResponseInput,
     FeedbackInput,
     OrderListParams,
     OrderOutput,
@@ -129,12 +132,38 @@ class DisputeView(APIView):
     permission_classes = [IsBrandOrCreator]
     throttle_scope = "writes"
 
-    @extend_schema(request=ReasonInput, responses=OrderOutput)
+    @extend_schema(request=DisputeCreateInput, responses={201: DisputeDetailOutput})
     def post(self, request: Request, order_id: UUID) -> Response:
-        data = ReasonInput(data=request.data)
+        data = DisputeCreateInput(data=request.data)
         data.is_valid(raise_exception=True)
-        dispute = services.open_dispute(actor=request.user, order_id=order_id, reason=data.validated_data["reason"])
-        return Response(_out(dispute.order, request), status=status.HTTP_201_CREATED)
+        v = data.validated_data
+        dispute = services.open_dispute(
+            actor=request.user,
+            order_id=order_id,
+            reason=v["reason"],
+            kind=v.get("kind", "dispute"),
+            evidence_upload_ids=v.get("evidenceUploadIds"),
+        )
+        return Response(DisputeDetailOutput(dispute).data, status=status.HTTP_201_CREATED)
+
+
+class DisputeResponseView(APIView):
+    permission_classes = [IsBrandOrCreator]
+    throttle_scope = "writes"
+
+    @extend_schema(request=DisputeResponseInput, responses={200: DisputeDetailOutput})
+    def post(self, request: Request, order_id: UUID, dispute_id: UUID) -> Response:
+        data = DisputeResponseInput(data=request.data)
+        data.is_valid(raise_exception=True)
+        v = data.validated_data
+        dispute = services.respond_to_dispute(
+            actor=request.user,
+            order_id=order_id,
+            dispute_id=dispute_id,
+            statement=v["statement"],
+            evidence_upload_ids=v.get("evidenceUploadIds"),
+        )
+        return Response(DisputeDetailOutput(dispute).data, status=status.HTTP_200_OK)
 
 
 class ReviewCreateView(APIView):

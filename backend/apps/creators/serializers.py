@@ -295,6 +295,8 @@ class CreatorCardOutput(serializers.ModelSerializer):
             "instagram",
             "youtube",
             "platforms",
+            "badges",
+            "featured",
         )
 
     # ── helpers ──────────────────────────────────────────────────────────────

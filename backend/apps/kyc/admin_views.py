@@ -27,6 +27,7 @@ from apps.kyc.models import (
 from apps.notifications.services import notify
 
 
+@extend_schema(tags=["Admin - Verifications"])
 class AdminVerificationListView(APIView):
     """List verification requests sorted by SLA urgency with status/kind counts."""
 
@@ -96,6 +97,7 @@ class AdminVerificationListView(APIView):
         )
 
 
+@extend_schema(tags=["Admin - Verifications"])
 class AdminVerificationDetailView(APIView):
     """Retrieve full details of a specific verification request."""
 
@@ -113,6 +115,7 @@ class AdminVerificationDetailView(APIView):
         return Response(AdminVerificationDetailOutput(vr).data)
 
 
+@extend_schema(tags=["Admin - Verifications"])
 class AdminVerificationApproveView(APIView):
     """Approve a verification request if all checks pass."""
 
@@ -183,6 +186,7 @@ class AdminVerificationApproveView(APIView):
         )
 
 
+@extend_schema(tags=["Admin - Verifications"])
 class AdminVerificationRejectView(APIView):
     """Reject a verification request with a mandatory reason."""
 
@@ -264,6 +268,7 @@ class AdminVerificationRejectView(APIView):
         )
 
 
+@extend_schema(tags=["Admin - Verifications"])
 class AdminVerificationRequestInfoView(APIView):
     """Request additional items/documents from applicant, setting KYC status to action_needed."""
 

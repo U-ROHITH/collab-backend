@@ -11,6 +11,12 @@ from apps.creators.serializers import money
 from apps.identity.models import Role
 
 
+class CampaignModerationOutput(serializers.Serializer):
+    status = serializers.CharField()
+    reason = serializers.CharField(allow_null=True)
+    changedFields = serializers.ListField(child=serializers.CharField(), default=list)  # noqa: N815
+
+
 class CampaignOutput(serializers.ModelSerializer):
     """Creators bid blind: `brand` is null for creators. They learn the brand once an order exists.
     With context["guest"] (signed-out, mid-signup, unapproved creator) `brief` and `usageRights` are null."""
@@ -22,6 +28,8 @@ class CampaignOutput(serializers.ModelSerializer):
     usageRights = serializers.JSONField(source="usage_rights")  # noqa: N815
     createdAt = LocalDateField(source="created_at")  # noqa: N815  "YYYY-MM-DD"
     bidCount = serializers.SerializerMethodField()  # noqa: N815
+    moderationStatus = serializers.CharField(source="moderation_status")  # noqa: N815
+    moderation = serializers.SerializerMethodField()
 
     class Meta:
         model = Campaign
@@ -39,6 +47,8 @@ class CampaignOutput(serializers.ModelSerializer):
             "brand",
             "bidCount",
             "createdAt",
+            "moderationStatus",
+            "moderation",
         )
 
     def to_representation(self, instance: Campaign) -> dict[str, Any]:
@@ -48,6 +58,22 @@ class CampaignOutput(serializers.ModelSerializer):
             data["brief"] = None
             data["usageRights"] = None
         return data
+
+    def get_moderation(self, obj: Campaign) -> dict[str, Any]:
+        request = self.context.get("request")
+        user = getattr(request, "user", None) if request else None
+        # Only the owning brand or admin sees detailed internal moderation reason/changed fields
+        if user and (getattr(user, "role", None) == Role.BRAND or getattr(user, "role", None) == Role.ADMIN):
+            return {
+                "status": obj.moderation_status,
+                "reason": obj.moderation_reason or None,
+                "changedFields": list(obj.changed_fields or []),
+            }
+        return {
+            "status": obj.moderation_status,
+            "reason": None,
+            "changedFields": [],
+        }
 
     def get_brand(self, obj: Campaign) -> dict[str, Any] | None:
         request = self.context.get("request")

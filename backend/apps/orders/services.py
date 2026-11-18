@@ -1,18 +1,29 @@
+from datetime import timedelta
 from typing import Any
 from uuid import UUID
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import Max
+from django.utils import timezone
 
 from apps.brands.models import Brand
-from apps.core.exceptions import Conflict, DomainError, NotFound
+from apps.core.exceptions import Conflict, DomainError, Forbidden, NotFound
 from apps.creators.models import Creator
 from apps.identity.models import Role, User
 from apps.money.fees import FeeConfig, compute_order_amounts
 from apps.notifications.services import notify
 from apps.orders import state_machine
-from apps.orders.models import Deliverable, Dispute, Order, OrderEvent, OrderStatus, Review
+from apps.orders.models import (
+    Deliverable,
+    Dispute,
+    DisputeKind,
+    DisputeStatus,
+    Order,
+    OrderEvent,
+    OrderStatus,
+    Review,
+)
 from apps.orders.selectors import orders_visible_to
 
 
@@ -147,13 +158,92 @@ def cancel(*, actor: User, order_id: UUID, reason: str) -> Order:
     return order
 
 
-def open_dispute(*, actor: User, order_id: UUID, reason: str) -> Dispute:
+def open_dispute(
+    *,
+    actor: User,
+    order_id: UUID,
+    reason: str,
+    kind: str = DisputeKind.DISPUTE,
+    evidence_upload_ids: list[UUID] | None = None,
+) -> Dispute:
     with transaction.atomic():
+        qs = orders_visible_to(actor)
+        order = qs.select_for_update(of=("self",)).filter(pk=order_id).first()
+        if order is None:
+            raise NotFound()
+        order.status_before_dispute = order.status
+        order.save(update_fields=["status_before_dispute"])
         order = _apply(
             order_id, actor=actor, role=actor.role or "", event="open_dispute", reason=reason, visible_to=actor
         )
-        dispute = Dispute.objects.create(order=order, opened_by=actor, reason=reason)
+        sla_due_at = timezone.now() + timedelta(hours=48)
+        upload_ids = [str(u) for u in (evidence_upload_ids or [])]
+        dispute = Dispute.objects.create(
+            order=order,
+            opened_by=actor,
+            reason=reason,
+            kind=kind,
+            evidence_upload_ids=upload_ids,
+            sla_due_at=sla_due_at,
+        )
         _notify_other(order, actor, "dispute_opened", f"A dispute was opened on {order.title}")
+        from apps.notifications.services import notify_admins
+
+        notify_admins(
+            type="dispute_opened",
+            title=f"Dispute Opened on Order: {order.title}",
+            body=f"{actor.email or actor.phone} opened a {kind} on '{order.title}': {reason[:100]}",
+            data={"orderId": str(order.id), "disputeId": str(dispute.id), "kind": kind},
+        )
+    return dispute
+
+
+def respond_to_dispute(
+    *,
+    actor: User,
+    order_id: UUID,
+    dispute_id: UUID,
+    statement: str,
+    evidence_upload_ids: list[UUID] | None = None,
+) -> Dispute:
+    with transaction.atomic():
+        dispute = Dispute.objects.select_for_update().filter(pk=dispute_id, order_id=order_id).first()
+        if dispute is None:
+            raise NotFound("Dispute not found.")
+        if dispute.status != DisputeStatus.OPEN:
+            raise Conflict("Dispute is already resolved.", code="DISPUTE_NOT_OPEN")
+        # Check actor is the other party (counterparty)
+        order = dispute.order
+        parties = _parties(order)
+        if actor.pk not in parties or actor.pk == dispute.opened_by_id:
+            raise Forbidden("Only the counterparty can respond to this dispute.", code="NOT_COUNTERPARTY")
+        if dispute.counterparty_statement:
+            raise Conflict("A statement has already been submitted.", code="STATEMENT_ALREADY_SUBMITTED")
+
+        dispute.counterparty_statement = statement
+        dispute.counterparty_statement_at = timezone.now()
+        dispute.counterparty_upload_ids = [str(u) for u in (evidence_upload_ids or [])]
+        dispute.save(
+            update_fields=["counterparty_statement", "counterparty_statement_at", "counterparty_upload_ids"]
+        )
+
+        # Notify dispute opener
+        notify(
+            user_id=dispute.opened_by_id,
+            type="dispute_response",
+            title=f"Counterparty Responded to Dispute: {order.title}",
+            body=statement[:150],
+            data={"orderId": str(order.id), "disputeId": str(dispute.id)},
+        )
+        # Notify admins
+        from apps.notifications.services import notify_admins
+
+        notify_admins(
+            type="dispute_response",
+            title=f"Counterparty Responded: {order.title}",
+            body=statement[:150],
+            data={"orderId": str(order.id), "disputeId": str(dispute.id)},
+        )
     return dispute
 
 
@@ -183,6 +273,21 @@ def create_review(*, actor: User, order_id: UUID, stars: int, text: str) -> Revi
             raise DomainError("You can review only after the order is completed.", code="ORDER_NOT_COMPLETED")
         if Review.objects.filter(order=order).exists():
             raise Conflict("You already reviewed this order.", code="REVIEW_EXISTS")
-        review = Review.objects.create(order=order, brand=order.brand, creator=order.creator, stars=stars, text=text)
-        apply_review(creator_id=order.creator_id, stars=stars)
+        from apps.orders.models import ReviewStatus
+
+        is_completed = order.status == OrderStatus.COMPLETED
+        review_status = ReviewStatus.VISIBLE if is_completed else ReviewStatus.FLAGGED
+        flag_reason = "" if is_completed else "No completed order between parties"
+
+        review = Review.objects.create(
+            order=order,
+            brand=order.brand,
+            creator=order.creator,
+            stars=stars,
+            text=text,
+            status=review_status,
+            flag_reason=flag_reason,
+        )
+        if review_status == ReviewStatus.VISIBLE:
+            apply_review(creator_id=order.creator_id, stars=stars)
     return review

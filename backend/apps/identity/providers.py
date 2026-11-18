@@ -42,20 +42,44 @@ def send_email_otp(email: str, code: str) -> None:
     subject = "Your Collab login code"
     text = f"Your login code is {code}. It expires in 5 minutes. If you didn't request it, ignore this email."
     if settings.RESEND_API_KEY:
+        from_email = settings.RESEND_FROM_EMAIL or settings.DEFAULT_FROM_EMAIL
         try:
             resp = requests.post(
                 "https://api.resend.com/emails",
                 headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
-                json={"from": settings.RESEND_FROM_EMAIL, "to": [email], "subject": subject, "text": text},
+                json={"from": from_email, "to": [email], "subject": subject, "text": text},
                 timeout=_TIMEOUT,
             )
             if resp.status_code < 300:
                 return
             logger.error(
-                "Resend rejected email (status %s, %s); falling back to SMTP", resp.status_code, _resend_reason(resp)
+                "Resend rejected email (status %s, %s)", resp.status_code, _resend_reason(resp)
             )
+            raise DeliveryError
         except requests.RequestException as exc:
-            logger.error("Resend failed (%s); falling back to SMTP", type(exc).__name__)
+            logger.error("Resend failed (%s)", type(exc).__name__)
+            raise DeliveryError from None
+    if getattr(settings, "BREVO_API_KEY", None):
+        from_email = getattr(settings, "BREVO_FROM_EMAIL", None) or settings.DEFAULT_FROM_EMAIL
+        try:
+            resp = requests.post(
+                "https://api.brevo.com/v3/smtp/email",
+                headers={"api-key": settings.BREVO_API_KEY, "Content-Type": "application/json"},
+                json={
+                    "sender": {"email": from_email},
+                    "to": [{"email": email}],
+                    "subject": subject,
+                    "textContent": text,
+                },
+                timeout=_TIMEOUT,
+            )
+            if resp.status_code < 300:
+                return
+            logger.error("Brevo rejected email (status %s)", resp.status_code)
+            raise DeliveryError
+        except requests.RequestException as exc:
+            logger.error("Brevo failed (%s)", type(exc).__name__)
+            raise DeliveryError from None
     if not settings.EMAIL_HOST:
         raise DeliveryError
     try:

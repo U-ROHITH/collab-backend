@@ -177,6 +177,8 @@ def claim_ready_upload(*, user: User, upload_id: UUID, kind: str) -> Upload:
 
 
 def can_access(user: User, upload: Upload) -> bool:
+    if getattr(user, "is_staff", False) or getattr(user, "role", None) == "admin":
+        return True
     if upload.owner_id == user.pk:
         return True
     from apps.messaging.selectors import conversations_for
@@ -196,6 +198,22 @@ def download_url(*, user: User, upload_id: UUID) -> dict[str, Any]:
     upload = Upload.objects.filter(pk=upload_id, status=UploadStatus.READY).first()
     if upload is None or not can_access(user, upload):
         raise NotFound()
+
+    # Log audit entry when an admin fetches a signed download URL
+    if getattr(user, "is_staff", False) or getattr(user, "role", None) == "admin":
+        from apps.core.audit import record_audit
+
+        record_audit(
+            admin=user,
+            action="upload.view",
+            target=upload,
+            detail={
+                "uploadId": str(upload.id),
+                "kind": upload.kind,
+                "storageKey": upload.storage_key,
+            },
+        )
+
     if upload.public_url:
         return {"url": upload.public_url, "expiresIn": None}
     try:

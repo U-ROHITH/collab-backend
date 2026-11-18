@@ -25,6 +25,19 @@ def notify(*, user_id: Any, type: str, title: str, body: str = "", data: dict[st
     return n
 
 
+def notify_admins(
+    *,
+    type: str,
+    title: str,
+    body: str = "",
+    data: dict[str, Any] | None = None,
+) -> list[Notification]:
+    from apps.identity.models import Role, User, UserStatus
+
+    admins = User.objects.filter(role=Role.ADMIN, is_staff=True, status=UserStatus.ACTIVE)
+    return [notify(user_id=adm.id, type=type, title=title, body=body, data=data) for adm in admins]
+
+
 def mark_read(*, user: Any, notification_id: UUID) -> Notification:
     n = Notification.objects.filter(pk=notification_id, user=user).first()
     if n is None:

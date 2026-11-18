@@ -463,26 +463,37 @@ def record_audit(
         e_id = entity_id or ""
 
     with transaction.atomic():
-        log = AuditLog(
+        log = AuditLog.objects.create(
             actor=actor_user,
             action=action,
             entity_type=e_type,
             entity_id=e_id,
             metadata=meta,
         )
-        log.save()
+
+    return {"id": str(log.id), "hash": log.hash}
+
+
+def verify_audit_chain() -> tuple[bool, int, str | None]:
+    """Verify cryptographic integrity of the append-only AuditLog SHA-256 chain."""
+    logs = list(AuditLog.objects.order_by("created_at", "id"))
+    prev_hash = ""
+    for log in logs:
+        if log.prev_hash != prev_hash:
+            return False, len(logs), str(log.id)
         payload = (
+            f"{prev_hash}:"
             f"{log.id}:"
             f"{log.created_at.isoformat() if log.created_at else ''}:"
-            f"{actor_user.id if actor_user else ''}:"
-            f"{action}:{e_type}:{e_id}:"
-            f"{json.dumps(meta, sort_keys=True)}"
+            f"{log.actor_id or ''}:"
+            f"{log.action}:{log.entity_type}:{log.entity_id}:"
+            f"{json.dumps(log.metadata, sort_keys=True)}"
         )
-        entry_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
-        log.hash = entry_hash
-        log.save(update_fields=["hash"])
-
-    return {"id": str(log.id), "hash": entry_hash}
+        expected_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        if log.hash != expected_hash:
+            return False, len(logs), str(log.id)
+        prev_hash = log.hash
+    return True, len(logs), None
 
 
 MFA_CHALLENGE_TIMEOUT_SECONDS = 600  # 10 minutes
