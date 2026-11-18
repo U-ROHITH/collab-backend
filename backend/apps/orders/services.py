@@ -276,9 +276,9 @@ def create_review(*, actor: User, order_id: UUID, stars: int, text: str) -> Revi
             raise Conflict("You already reviewed this order.", code="REVIEW_EXISTS")
         from apps.orders.models import ReviewStatus
 
-        is_completed = order.status == OrderStatus.COMPLETED
-        review_status = ReviewStatus.VISIBLE if is_completed else ReviewStatus.FLAGGED
-        flag_reason = "" if is_completed else "No completed order between parties"
+        has_valid_order = order.status in (OrderStatus.APPROVED, OrderStatus.COMPLETED)
+        review_status = ReviewStatus.VISIBLE if has_valid_order else ReviewStatus.FLAGGED
+        flag_reason = "" if has_valid_order else "No completed order between parties"
 
         review = Review.objects.create(
             order=order,

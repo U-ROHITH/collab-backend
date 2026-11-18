@@ -7,7 +7,7 @@ from rest_framework.test import APIClient
 
 from apps.core.exceptions import DomainError
 from apps.identity.models import AdminRole, AuditLog, Role, User
-from apps.identity.services import issue_tokens
+from apps.identity.services import issue_admin_tokens, issue_tokens
 from apps.money.models import CreatorWallet, PlatformRule, WithdrawalRequest
 from apps.notifications.models import Notification
 from apps.orders.models import (
@@ -32,7 +32,7 @@ def _make_admin_client(role: str = AdminRole.SUPER_ADMIN) -> tuple[APIClient, Us
         is_staff=True,
     )
     client = APIClient()
-    tokens = issue_tokens(admin)
+    tokens = issue_admin_tokens(admin)
     client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens.access}")
     client.user = admin  # type: ignore[attr-defined]
     return client, admin

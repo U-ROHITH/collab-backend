@@ -204,15 +204,3 @@ class SignupCompleteView(APIView):
             password=v.get("password") or None,
         )
         return Response(MeOutput(user).data, status=status.HTTP_201_CREATED)
-
-from apps.identity.admin_auth_views import (
-    AdminLoginView,
-    AdminLogoutView,
-    AdminMfaVerifyView,
-)
-
-__all__ = [
-    "AdminLoginView",
-    "AdminLogoutView",
-    "AdminMfaVerifyView",
-]

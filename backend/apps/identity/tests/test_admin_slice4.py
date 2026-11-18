@@ -7,7 +7,7 @@ from rest_framework.test import APIClient
 from apps.campaigns.models import Bid, BidStatus, Campaign, ModerationStatus
 from apps.creators.models import Category, Creator
 from apps.identity.models import AdminRole, Role, User
-from apps.identity.services import issue_tokens
+from apps.identity.services import issue_admin_tokens
 from apps.kyc.models import KycProfile, KycStatus
 from apps.moderation.models import (
     BidAlert,
@@ -30,7 +30,7 @@ def _make_admin_client(role: str = AdminRole.TRUST_SAFETY) -> tuple[APIClient, U
         is_staff=True,
     )
     client = APIClient()
-    tokens = issue_tokens(admin)
+    tokens = issue_admin_tokens(admin)
     client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens.access}")
     client.user = admin  # type: ignore[attr-defined]
     return client, admin

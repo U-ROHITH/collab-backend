@@ -7,7 +7,7 @@ from rest_framework.test import APIClient
 
 from apps.campaigns.models import Bid, BidStatus
 from apps.identity.models import AdminRole, Role, User
-from apps.identity.services import issue_tokens
+from apps.identity.services import issue_admin_tokens
 from apps.notifications.models import Notification
 
 pytestmark = pytest.mark.django_db
@@ -22,7 +22,7 @@ def _make_admin_client(role: str = AdminRole.TRUST_SAFETY) -> tuple[APIClient, U
         is_staff=True,
     )
     client = APIClient()
-    tokens = issue_tokens(admin)
+    tokens = issue_admin_tokens(admin)
     client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens.access}")
     client.user = admin  # type: ignore[attr-defined]
     return client, admin
