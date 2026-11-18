@@ -70,3 +70,27 @@ def test_brand_can_review_once_it_has_approved(
     assert brand.post(f"/v1/orders/{order['id']}/approve/").status_code == 200
     resp = brand.post(f"/v1/orders/{order['id']}/review/", {"stars": 5, "text": "Great"}, format="json")
     assert resp.status_code == 201, resp.json()
+
+
+@pytest.mark.parametrize("kind", ["approved", "pending", "no_kyc"])
+def test_every_creator_can_browse_open_campaigns(
+    make_creator: Any, brand: APIClient, campaign_payload: dict[str, Any], kind: str
+) -> None:
+    brand.post("/v1/campaigns/", campaign_payload, format="json")
+    creator = {
+        "approved": lambda: make_creator("A"),
+        "pending": lambda: make_creator("P", approved=False),
+        "no_kyc": lambda: make_creator("K", kyc=False),
+    }[kind]()
+    resp = creator.get("/v1/campaigns/")
+    assert resp.status_code == 200, resp.json()
+    assert len(resp.json()["data"]) == 1
+
+
+def test_suspended_account_gets_a_clear_403(creator: APIClient) -> None:
+    from apps.identity.models import UserStatus
+
+    creator.user.status = UserStatus.SUSPENDED
+    creator.user.save(update_fields=["status"])
+    resp = creator.get("/v1/campaigns/")
+    assert resp.status_code == 403 and resp.json()["error"]["code"] == "ACCOUNT_SUSPENDED"
