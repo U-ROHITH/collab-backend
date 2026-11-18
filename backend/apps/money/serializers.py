@@ -11,7 +11,7 @@ class PaymentCheckoutInput(StrictSerializer):
     orderId = serializers.UUIDField(required=False)  # noqa: N815
     packageId = serializers.UUIDField(required=False)  # noqa: N815
     cart = serializers.BooleanField(required=False, default=False)
-    currency = serializers.CharField(max_length=3, required=False, default="INR")
+    currency = serializers.ChoiceField(choices=("INR",), required=False, default="INR")
 
 
 class CheckoutSessionOutput(serializers.Serializer):

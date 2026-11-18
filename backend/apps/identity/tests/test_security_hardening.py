@@ -24,9 +24,7 @@ def sent_codes(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 
 def _code(client: APIClient, sent: list[str], purpose: str | None = None, dest: str = EMAIL) -> tuple[str, str]:
-    body: dict[str, Any] = {"channel": "email", "destination": dest}
-    if purpose:
-        body["purpose"] = purpose
+    body: dict[str, Any] = {"channel": "email", "destination": dest, "purpose": purpose or "login"}
     resp = client.post("/v1/auth/otp/request/", body, format="json")
     assert resp.status_code == 202, resp.content
     return resp.json()["data"]["challengeId"], sent[-1]

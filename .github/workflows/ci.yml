@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - feature/aws-production-deployment
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    name: Test and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: collab_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d collab_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      DJANGO_SETTINGS_MODULE: config.settings.test
+      DJANGO_SECRET_KEY: ci-only-django-secret-key-not-for-production
+      JWT_SIGNING_KEY: ci-only-jwt-signing-key-not-for-production
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/collab_test
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install project dependencies
+        run: uv sync --frozen --all-groups --no-install-project
+
+      - name: Run Ruff lint checks
+        run: uv run --frozen --no-sync ruff check .
+
+      - name: Run complete Django test suite
+        run: uv run --frozen --no-sync pytest --ds=config.settings.test -q
+
+      - name: Check migration consistency
+        run: uv run --frozen --no-sync python manage.py makemigrations --check --dry-run --settings=config.settings.test
+
+      - name: Build production Docker image
+        working-directory: .
+        run: docker build -t collab-backend:ci ./backend

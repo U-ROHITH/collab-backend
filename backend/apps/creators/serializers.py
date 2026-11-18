@@ -1,5 +1,7 @@
 from typing import Any
 
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.core.serializers import MoneyField, StrictSerializer
@@ -32,6 +34,7 @@ class PackageInput(StrictSerializer):
     active = serializers.BooleanField(required=False)
 
 
+@extend_schema_field(OpenApiTypes.STR)
 class RepliesWithinField(serializers.Field):
     """Hours in the database, "1h" | "6h" | "24h" | "3d" on the wire."""
 

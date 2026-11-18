@@ -244,6 +244,8 @@ EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="")
+BREVO_API_KEY = env("BREVO_API_KEY", default="")
+BREVO_FROM_EMAIL = env("BREVO_FROM_EMAIL", default="")
 # Fail fast: some hosts (e.g. Render free) block outbound SMTP, which would otherwise hang the request.
 EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=10)
 
@@ -264,10 +266,10 @@ ORDER_POLICY = {
 }
 
 # --- Razorpay / payments ----------------------------------------------------------------------
-RAZORPAY_KEY_ID = env("RAZORPAY_KEY_ID", default="rzp_test_collabmarketplace")
-RAZORPAY_KEY_SECRET = env("RAZORPAY_KEY_SECRET", default="test_secret_collab")
-RAZORPAY_WEBHOOK_SECRET = env("RAZORPAY_WEBHOOK_SECRET", default="test_webhook_secret")
-
+RAZORPAY_ENABLED = env.bool("RAZORPAY_ENABLED", default=False)
+RAZORPAY_KEY_ID = env("RAZORPAY_KEY_ID", default="")
+RAZORPAY_KEY_SECRET = env("RAZORPAY_KEY_SECRET", default="")
+RAZORPAY_WEBHOOK_SECRET = env("RAZORPAY_WEBHOOK_SECRET", default="")
 DEV_ENDPOINTS_ENABLED = False
 
 LOGGING = {
