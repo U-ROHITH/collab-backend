@@ -96,6 +96,25 @@ def test_suspend_account_blocks_user_and_revokes_sessions(creator: APIClient) ->
     assert dup_react.status_code == 409
     assert dup_react.json()["error"]["code"] == "ALREADY_ACTIVE"
 
+    # 4. Suspend via profile ID and via /v1/admin/users/accounts/... alias
+    profile_suspend_resp = admin_client.post(
+        f"/v1/admin/users/accounts/{creator_obj.id}/suspend/",
+        {"reason": "Profile ID test"},
+        format="json",
+    )
+    assert profile_suspend_resp.status_code == 200
+    assert profile_suspend_resp.json()["data"]["user"]["id"] == str(creator_user.id)
+    assert profile_suspend_resp.json()["data"]["user"]["status"] == "suspended"
+
+    # Reactivate via profile ID and accounts alias
+    profile_react_resp = admin_client.post(
+        f"/v1/admin/users/accounts/{creator_obj.id}/reactivate/",
+        {"reason": "Reactivate profile ID test"},
+        format="json",
+    )
+    assert profile_react_resp.status_code == 200
+    assert profile_react_resp.json()["data"]["user"]["status"] == "active"
+
 
 def test_suspend_brand_hides_live_campaigns(brand: APIClient, campaign_payload: dict[str, Any]) -> None:
     admin_client, _ = _make_admin_client(role=AdminRole.TRUST_SAFETY)
@@ -165,12 +184,13 @@ def test_admin_creators_list_and_curate(creator: APIClient) -> None:
     assert list_resp.status_code == 200
     res = list_resp.json()
     assert res["meta"]["total"] >= 1
-    assert any(c["id"] == str(cr.id) for c in res["data"])
+    assert any(c["id"] == str(cr.id) and c["userId"] == str(user.id) for c in res["data"])
 
     # Detail
     detail_resp = admin_client.get(f"/v1/admin/users/creators/{cr.id}/")
     assert detail_resp.status_code == 200
     data = detail_resp.json()["data"]
+    assert data["userId"] == str(user.id)
     assert data["displayName"] == cr.display_name
     assert "metrics" in data
     assert "recentOrders" in data

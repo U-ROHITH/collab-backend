@@ -36,6 +36,21 @@ from apps.identity.services import _hash_code
 from apps.notifications.services import notify
 
 
+def _resolve_user_id(user_id: UUID) -> UUID:
+    """Resolve user_id from either a direct User ID, a Creator ID, or a Brand ID."""
+    if User.objects.filter(pk=user_id).exists():
+        return user_id
+    from apps.creators.models import Creator
+    creator_user_id = Creator.objects.filter(pk=user_id).values_list("user_id", flat=True).first()
+    if creator_user_id:
+        return creator_user_id
+    from apps.brands.models import Brand
+    brand_user_id = Brand.objects.filter(pk=user_id).values_list("owner_id", flat=True).first()
+    if brand_user_id:
+        return brand_user_id
+    return user_id
+
+
 @extend_schema(tags=["Admin - Users"])
 class AdminSuspendAccountView(APIView):
     """Suspend a user account, revoke sessions, clear featured status if creator, and hide live campaigns if brand."""
@@ -44,6 +59,7 @@ class AdminSuspendAccountView(APIView):
 
     @extend_schema(request=AdminSuspendAccountInput, responses={200: AdminAccountActionResult})
     def post(self, request: Request, user_id: UUID) -> Response:
+        user_id = _resolve_user_id(user_id)
         input_serializer = AdminSuspendAccountInput(data=request.data)
         input_serializer.is_valid(raise_exception=True)
         reason = input_serializer.validated_data["reason"]
@@ -116,6 +132,7 @@ class AdminReactivateAccountView(APIView):
 
     @extend_schema(request=AdminReactivateAccountInput, responses={200: AdminAccountActionResult})
     def post(self, request: Request, user_id: UUID) -> Response:
+        user_id = _resolve_user_id(user_id)
         input_serializer = AdminReactivateAccountInput(data=request.data)
         input_serializer.is_valid(raise_exception=True)
         reason = input_serializer.validated_data.get("reason", "")
@@ -162,6 +179,7 @@ class AdminPasswordResetView(APIView):
 
     @extend_schema(request=None, responses={200: AdminPasswordResetResult})
     def post(self, request: Request, user_id: UUID) -> Response:
+        user_id = _resolve_user_id(user_id)
         user = User.objects.filter(pk=user_id).first()
         if user is None:
             raise NotFound("User not found.")
@@ -220,6 +238,7 @@ class AdminSessionsListView(APIView):
 
     @extend_schema(responses={200: AdminSessionOutput(many=True)})
     def get(self, request: Request, user_id: UUID) -> Response:
+        user_id = _resolve_user_id(user_id)
         user = User.objects.filter(pk=user_id).first()
         if user is None:
             raise NotFound("User not found.")
@@ -240,6 +259,7 @@ class AdminSessionsRevokeView(APIView):
 
     @extend_schema(request=None, responses={200: AdminSessionsRevokeResult})
     def post(self, request: Request, user_id: UUID) -> Response:
+        user_id = _resolve_user_id(user_id)
         with transaction.atomic():
             user = User.objects.select_for_update(of=("self",)).filter(pk=user_id).first()
             if user is None:

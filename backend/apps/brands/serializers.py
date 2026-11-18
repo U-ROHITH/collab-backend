@@ -12,6 +12,7 @@ _CIN = re.compile(r"^[LU][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$")
 
 
 class BrandOutput(serializers.ModelSerializer):
+    userId = serializers.UUIDField(source="owner_id", read_only=True)  # noqa: N815
     legalName = serializers.CharField(source="legal_name")  # noqa: N815
     stateCode = serializers.CharField(source="state_code")  # noqa: N815
     billingAddress = serializers.SerializerMethodField()  # noqa: N815
@@ -36,6 +37,7 @@ class BrandOutput(serializers.ModelSerializer):
         model = Brand
         fields = (
             "id",
+            "userId",
             "name",
             "website",
             "industry",

@@ -40,6 +40,7 @@ class AdminCategoryMergeInput(StrictSerializer):
 
 
 class AdminCreatorListOutput(serializers.ModelSerializer):
+    userId = serializers.UUIDField(source="user_id", read_only=True)  # noqa: N815
     displayName = serializers.CharField(source="display_name")  # noqa: N815
     avatarUrl = serializers.CharField(source="avatar_url", allow_null=True)  # noqa: N815
     primaryPlatform = serializers.CharField(source="primary_platform", allow_null=True)  # noqa: N815
@@ -55,6 +56,7 @@ class AdminCreatorListOutput(serializers.ModelSerializer):
         model = Creator
         fields = (
             "id",
+            "userId",
             "slug",
             "displayName",
             "avatarUrl",

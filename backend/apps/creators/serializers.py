@@ -251,6 +251,7 @@ class RepliesWithinFieldExtension(OpenApiSerializerFieldExtension):
 class CreatorCardOutput(serializers.ModelSerializer):
     """Public view. Never includes contact details, payout info, or approval internals."""
 
+    userId = serializers.UUIDField(source="user_id", read_only=True)  # noqa: N815
     displayName = serializers.CharField(source="display_name")  # noqa: N815
     primaryPlatform = serializers.CharField(source="primary_platform", allow_null=True)  # noqa: N815
     repliesWithin = RepliesWithinField(source="replies_within", allow_null=True)  # noqa: N815
@@ -274,6 +275,7 @@ class CreatorCardOutput(serializers.ModelSerializer):
         model = Creator
         fields = (
             "id",
+            "userId",
             "slug",
             "displayName",
             "bio",

@@ -9,6 +9,7 @@ from apps.campaigns.models import Campaign, ModerationStatus
 
 
 class AdminBrandListOutput(serializers.ModelSerializer):
+    userId = serializers.UUIDField(source="owner_id", read_only=True)  # noqa: N815
     legalName = serializers.CharField(source="legal_name", allow_blank=True)  # noqa: N815
     logoUrl = serializers.CharField(source="logo_url", allow_null=True)  # noqa: N815
     regVerified = serializers.BooleanField(source="reg_verified")  # noqa: N815
@@ -22,6 +23,7 @@ class AdminBrandListOutput(serializers.ModelSerializer):
         model = Brand
         fields = (
             "id",
+            "userId",
             "name",
             "legalName",
             "logoUrl",
