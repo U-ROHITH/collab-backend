@@ -4,10 +4,12 @@ import uuid
 from typing import Any
 from uuid import UUID
 
+import requests
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
+from rest_framework.exceptions import APIException
 
 from apps.brands.models import Brand, CartItem
 from apps.brands.services import checkout_cart
@@ -34,6 +36,49 @@ except ImportError:
 UPI_REGEX = r"^[\w\.\-_]{2,256}@[a-zA-Z]{2,64}$"
 
 
+class PaymentGatewayUnavailable(APIException):
+    status_code = 503
+    default_detail = "Online payments are temporarily unavailable."
+    default_code = "payment_gateway_unavailable"
+
+
+def _razorpay_credentials() -> tuple[str, str]:
+    if not getattr(settings, "RAZORPAY_ENABLED", False):
+        raise PaymentGatewayUnavailable()
+
+    key_id = getattr(settings, "RAZORPAY_KEY_ID", "")
+    key_secret = getattr(settings, "RAZORPAY_KEY_SECRET", "")
+
+    if not key_id or not key_secret:
+        raise PaymentGatewayUnavailable()
+
+    return key_id, key_secret
+
+
+def fetch_razorpay_payment(payment_id: str) -> dict[str, Any]:
+    """Fetch authoritative payment status directly from Razorpay."""
+    key_id, key_secret = _razorpay_credentials()
+
+    if not re.fullmatch(r"pay_[A-Za-z0-9_]{1,96}", payment_id or ""):
+        raise DomainError("Invalid Razorpay payment ID.", code="INVALID_PAYMENT_ID")
+
+    try:
+        response = requests.get(
+            f"https://api.razorpay.com/v1/payments/{payment_id}",
+            auth=(key_id, key_secret),
+            timeout=(5, 15),
+        )
+        response.raise_for_status()
+        result = response.json()
+    except (requests.RequestException, ValueError) as exc:
+        raise PaymentGatewayUnavailable() from exc
+
+    if not isinstance(result, dict):
+        raise PaymentGatewayUnavailable()
+
+    return result
+
+
 @transaction.atomic
 def initiate_checkout(
     *,
@@ -45,7 +90,15 @@ def initiate_checkout(
     items: list[dict[str, Any]] | None = None,
     currency: str = "INR",
 ) -> tuple[PaymentSession, list[Order]]:
-    """Initialize a payment/checkout session for an order, package, or cart items."""
+    """Create local orders and a real Razorpay order."""
+    key_id, key_secret = _razorpay_credentials()
+
+    currency = (currency or "INR").upper()
+    if not re.fullmatch(r"[A-Z]{3}", currency):
+        raise DomainError("Invalid payment currency.", code="INVALID_CURRENCY")
+    if currency != "INR":
+        raise DomainError("Only INR payments are supported.", code="UNSUPPORTED_CURRENCY")
+
     orders: list[Order] = []
 
     if order_id:
@@ -53,8 +106,10 @@ def initiate_checkout(
             order = Order.objects.select_for_update().get(pk=order_id, brand=brand)
         except Order.DoesNotExist:
             raise NotFound("Order not found.") from None
+
         if order.status != OrderStatus.AWAITING_PAYMENT:
             raise Conflict("Order is already funded or processed.", code="ORDER_ALREADY_PAID")
+
         orders.append(order)
 
     elif package_id:
@@ -79,32 +134,76 @@ def initiate_checkout(
         orders.append(order)
 
     else:
-        # Check out cart items
         cart_count = CartItem.objects.filter(brand=brand).count()
+
         if cart_count > 0:
             orders = checkout_cart(brand=brand, actor=actor, usage_rights=USAGE_RIGHTS)
         else:
-            # Check if there is already an order awaiting payment
             pending_orders = list(
-                Order.objects.filter(brand=brand, status=OrderStatus.AWAITING_PAYMENT).order_by("-created_at")[:1]
+                Order.objects.filter(
+                    brand=brand,
+                    status=OrderStatus.AWAITING_PAYMENT,
+                ).order_by("-created_at")[:1]
             )
+
             if pending_orders:
                 orders = pending_orders
             else:
-                raise DomainError("No items or orders specified for checkout.", code="CHECKOUT_EMPTY")
+                raise DomainError(
+                    "No items or orders specified for checkout.",
+                    code="CHECKOUT_EMPTY",
+                )
 
-    total_amount_paise = sum(o.brand_total_paise for o in orders)
-    gateway_order_id = f"order_rzp_{uuid.uuid4().hex[:16]}"
+    total_amount_paise = sum(order.brand_total_paise for order in orders)
+
+    if total_amount_paise <= 0:
+        raise DomainError("Checkout amount must be positive.", code="INVALID_AMOUNT")
+
+    order_ids = [str(order.id) for order in orders]
+    receipt_reference = f"collab-{uuid.uuid4().hex}"
+
+    try:
+        response = requests.post(
+            "https://api.razorpay.com/v1/orders",
+            auth=(key_id, key_secret),
+            json={
+                "amount": total_amount_paise,
+                "currency": currency,
+                "receipt": receipt_reference,
+                "notes": {
+                    "brand_id": str(brand.pk),
+                    "order_ids": ",".join(order_ids),
+                },
+            },
+            timeout=(5, 15),
+        )
+        response.raise_for_status()
+        gateway_data = response.json()
+    except (requests.RequestException, ValueError) as exc:
+        raise PaymentGatewayUnavailable() from exc
+
+    if (
+        not isinstance(gateway_data, dict)
+        or not isinstance(gateway_data.get("id"), str)
+        or not gateway_data["id"].startswith("order_")
+        or gateway_data.get("amount") != total_amount_paise
+        or gateway_data.get("currency") != currency
+    ):
+        raise PaymentGatewayUnavailable()
 
     session = PaymentSession.objects.create(
         brand=brand,
-        order=orders[0] if orders else None,
+        order=orders[0],
         gateway="razorpay",
-        gateway_order_id=gateway_order_id,
+        gateway_order_id=gateway_data["id"],
         amount_paise=total_amount_paise,
         currency=currency,
-        metadata={"orderIds": [str(o.id) for o in orders]},
+        metadata={
+            "orderIds": order_ids,
+            "receipt": receipt_reference,
+        },
     )
+
     return session, orders
 
 
@@ -113,62 +212,96 @@ def verify_payment(
     *,
     gateway_order_id: str,
     payment_id: str,
-    signature: str = "",
+    signature: str,
+    amount_paise: int,
+    currency: str,
     brand: Brand | None = None,
-    metadata: dict[str, Any] | None = None,
 ) -> PaymentReceipt:
-    """Confirm payment success, fund the order(s), and generate payment receipt."""
-    session = PaymentSession.objects.select_for_update().filter(gateway_order_id=gateway_order_id).first()
-
-    # If not found by gateway_order_id, check if caller passed an order ID directly
-    if session is None:
-        try:
-            order_uuid = UUID(gateway_order_id)
-            order = Order.objects.filter(pk=order_uuid).first()
-            if order:
-                session = PaymentSession.objects.filter(order=order).first()
-                if session is None:
-                    session = PaymentSession.objects.create(
-                        brand=order.brand,
-                        order=order,
-                        gateway="razorpay",
-                        gateway_order_id=f"order_rzp_{uuid.uuid4().hex[:16]}",
-                        amount_paise=order.brand_total_paise,
-                        currency="INR",
-                    )
-        except (ValueError, TypeError):
-            pass
+    """Fund orders only after independently authenticated payment confirmation."""
+    session = (
+        PaymentSession.objects.select_for_update()
+        .filter(gateway_order_id=gateway_order_id, gateway="razorpay")
+        .first()
+    )
 
     if session is None:
         raise NotFound("Payment session not found.")
 
-    # If already paid, return existing receipt
-    existing_receipt = session.receipts.first()
+    if brand is not None and session.brand_id != brand.pk:
+        raise NotFound("Payment session not found.")
+
+    if session.amount_paise != amount_paise or session.currency != currency:
+        raise Conflict("Payment amount or currency does not match checkout.", code="PAYMENT_AMOUNT_MISMATCH")
+
+    existing_receipt = (
+        PaymentReceipt.objects.select_for_update()
+        .filter(payment_session=session)
+        .first()
+    )
+
     if existing_receipt:
+        if existing_receipt.gateway_payment_id != payment_id:
+            raise Conflict("This checkout has already been paid with another payment.", code="PAYMENT_ALREADY_USED")
         return existing_receipt
 
-    # Transition order(s) to FUNDED
-    order_ids = session.metadata.get("orderIds", [])
+    if session.status != "created":
+        raise Conflict("Payment session is not payable.", code="PAYMENT_SESSION_NOT_PAYABLE")
+
+    metadata = session.metadata or {}
+    order_ids = metadata.get("orderIds", [])
+
+    if not isinstance(order_ids, list):
+        raise Conflict("Invalid checkout order metadata.", code="INVALID_CHECKOUT_METADATA")
+
+    order_ids = [str(value) for value in order_ids]
+
     if session.order_id and str(session.order_id) not in order_ids:
         order_ids.append(str(session.order_id))
 
-    for oid in order_ids:
-        try:
-            ord_obj = Order.objects.select_for_update().get(pk=UUID(oid))
-            if ord_obj.status == OrderStatus.AWAITING_PAYMENT:
-                order_services.system_event(
-                    order_id=ord_obj.id,
-                    event="fund",
-                    reason=f"Payment verified via {payment_id}",
-                )
-        except Order.DoesNotExist:
-            continue
+    if not order_ids or len(order_ids) != len(set(order_ids)):
+        raise Conflict("Invalid checkout order list.", code="INVALID_CHECKOUT_METADATA")
+
+    try:
+        parsed_ids = [UUID(value) for value in order_ids]
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise Conflict("Invalid checkout order ID.", code="INVALID_CHECKOUT_METADATA") from exc
+
+    order_objects = list(
+        Order.objects.select_for_update().filter(pk__in=parsed_ids).order_by("id")
+    )
+    orders_by_id = {str(order.pk): order for order in order_objects}
+
+    if len(orders_by_id) != len(order_ids):
+        raise Conflict("One or more checkout orders no longer exist.", code="CHECKOUT_ORDER_MISSING")
+
+    verified_orders = [orders_by_id[order_id] for order_id in order_ids]
+
+    for order in verified_orders:
+        if order.brand_id != session.brand_id:
+            raise Conflict("Checkout contains an order belonging to another brand.", code="CHECKOUT_BRAND_MISMATCH")
+
+        if order.status != OrderStatus.AWAITING_PAYMENT:
+            raise Conflict(
+                "One or more checkout orders are no longer awaiting payment.",
+                code="CHECKOUT_ORDER_NOT_PAYABLE",
+            )
+
+    if sum(order.brand_total_paise for order in verified_orders) != session.amount_paise:
+        raise Conflict("Checkout order totals no longer match the payment.", code="CHECKOUT_TOTAL_MISMATCH")
+
+    for order in verified_orders:
+        order_services.system_event(
+            order_id=order.id,
+            event="fund",
+            reason=f"Payment verified via {payment_id}",
+        )
 
     session.status = "paid"
     session.save(update_fields=["status", "updated_at"])
 
     receipt_number = f"REC-{timezone.now().strftime('%Y%m%d')}-{secrets.token_hex(4).upper()}"
-    receipt = PaymentReceipt.objects.create(
+
+    return PaymentReceipt.objects.create(
         payment_session=session,
         order=session.order,
         brand=session.brand,
@@ -179,9 +312,6 @@ def verify_payment(
         status="succeeded",
         receipt_number=receipt_number,
     )
-
-    return receipt
-
 
 @transaction.atomic
 def get_or_sync_wallet(creator: Creator) -> tuple[CreatorWallet, int]:
@@ -226,6 +356,12 @@ def request_withdrawal(
     payout_details: dict[str, Any],
 ) -> WithdrawalRequest:
     """Request payout of available wallet funds."""
+    if not getattr(settings, "PAYOUTS_ENABLED", False):
+        raise Conflict(
+            "Withdrawals are currently unavailable.",
+            code="PAYOUTS_DISABLED",
+        )
+
     min_paise = getattr(settings, "MIN_WITHDRAWAL_PAISE", 50_000)
     if amount_paise < min_paise:
         raise DomainError(

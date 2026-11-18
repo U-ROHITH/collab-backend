@@ -1,5 +1,3 @@
-import re
-
 from django.core.exceptions import ImproperlyConfigured
 
 from .base import *  # noqa: F403
@@ -10,7 +8,6 @@ from .base import (
     DATABASES,
     OTP_DELIVERY,
     OTP_TEST_ACCOUNTS,
-    OTP_TEST_CODE,
     SECRET_KEY,
     env,
 )
@@ -20,8 +17,11 @@ DEV_ENDPOINTS_ENABLED = False
 
 if len(SECRET_KEY) < 50:
     raise ImproperlyConfigured("DJANGO_SECRET_KEY must be at least 50 chars in production.")
-if not ALLOWED_HOSTS:
-    raise ImproperlyConfigured("DJANGO_ALLOWED_HOSTS must be set in production.")
+if not ALLOWED_HOSTS or any("*" in host for host in ALLOWED_HOSTS):
+    raise ImproperlyConfigured(
+        "DJANGO_ALLOWED_HOSTS must contain explicit hostnames; "
+        "wildcards are forbidden in production."
+    )
 if any("*" in o or o.startswith("http://") for o in CORS_ALLOWED_ORIGINS):
     raise ImproperlyConfigured("CORS origins must be exact https origins in production.")
 if any(not (r.startswith("^https://") and r.endswith("$")) for r in CORS_ALLOWED_ORIGIN_REGEXES):
@@ -30,8 +30,10 @@ if OTP_DELIVERY != "live":
     raise ImproperlyConfigured("OTP_DELIVERY must be 'live' in production.")
 if len(env("DATA_ENCRYPTION_KEY", default="")) < 32:
     raise ImproperlyConfigured("DATA_ENCRYPTION_KEY must be at least 32 chars in production.")
-if OTP_TEST_ACCOUNTS and not re.fullmatch(r"\d{6}", OTP_TEST_CODE):
-    raise ImproperlyConfigured("OTP_TEST_CODE must be 6 digits when OTP_TEST_ACCOUNTS is set.")
+if OTP_TEST_ACCOUNTS or env("OTP_TEST_CODE", default=""):
+    raise ImproperlyConfigured(
+        "OTP_TEST_ACCOUNTS and OTP_TEST_CODE must be empty in production."
+    )
 for required in (
     "JWT_SIGNING_KEY",
     "DATA_ENCRYPTION_KEY",
@@ -43,6 +45,20 @@ for required in (
     if not env(required, default=""):
         raise ImproperlyConfigured(f"{required} is required in production.")
 
+# RAZORPAY PRODUCTION CREDENTIAL VALIDATION
+if RAZORPAY_ENABLED:  # noqa: F405
+    if not RAZORPAY_KEY_ID.startswith("rzp_live_"):  # noqa: F405
+        raise ImproperlyConfigured(
+            "Live Razorpay payments require a valid live key ID."
+        )
+    if len(RAZORPAY_KEY_SECRET) < 20:  # noqa: F405
+        raise ImproperlyConfigured(
+            "A valid Razorpay live key secret is required."
+        )
+    if len(RAZORPAY_WEBHOOK_SECRET) < 20:  # noqa: F405
+        raise ImproperlyConfigured(
+            "A valid Razorpay webhook secret is required."
+        )
 # Reuse database connections. With CONN_MAX_AGE=0 under ASGI every request opened a fresh TLS connection to
 # the Supabase pooler in Mumbai (~0.3 s from Singapore). A process-level pool keeps a few warm. Django already
 # disables prepared statements, which the transaction pooler requires. Size: 2 workers x 4 is well under
@@ -52,6 +68,7 @@ DATABASES["default"]["OPTIONS"]["pool"] = {
     "max_size": env.int("DB_POOL_MAX_SIZE", default=4),
     "timeout": 10,
     "max_idle": 300,
+    "kwargs": {"prepare_threshold": None},
 }
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

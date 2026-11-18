@@ -2,6 +2,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
+from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -20,9 +21,11 @@ def sent_codes(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 
 def _request(client: APIClient, destination: str = "98765 43210", channel: str = "sms") -> Any:
-    return client.post("/v1/auth/otp/request/", {"channel": channel, "destination": destination}, format="json")
-
-
+    return client.post(
+        "/v1/auth/otp/request/",
+        {"channel": channel, "destination": destination, "purpose": "login"},
+        format="json",
+    )
 def _login(client: APIClient, sent_codes: list[str], destination: str = "9876543210") -> dict[str, Any]:
     challenge = _request(client, destination).json()["data"]["challengeId"]
     resp = client.post("/v1/auth/otp/verify/", {"challengeId": challenge, "code": sent_codes[-1]}, format="json")
@@ -95,11 +98,11 @@ def test_new_code_invalidates_previous(anon: APIClient, sent_codes: list[str]) -
 
 
 def test_per_destination_hourly_limit(anon: APIClient, sent_codes: list[str]) -> None:
-    for _ in range(5):
-        assert _request(anon).status_code == 202
-    r = _request(anon)
-    assert r.status_code == 429 and r.json()["error"]["code"] == "RATE_LIMITED"
-
+    with override_settings(OTP_RATE_LIMIT_ENABLED=True, OTP_MAX_PER_DESTINATION_PER_HOUR=5):
+        for _ in range(5):
+            assert _request(anon).status_code == 202
+        r = _request(anon)
+        assert r.status_code == 429 and r.json()["error"]["code"] == "RATE_LIMITED"
 
 def test_signup_complete_sets_role_once_and_never_admin(anon: APIClient, sent_codes: list[str]) -> None:
     tokens = _login(anon, sent_codes)

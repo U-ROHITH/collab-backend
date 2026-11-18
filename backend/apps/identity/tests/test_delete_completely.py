@@ -1,4 +1,5 @@
-import pytest
+﻿import pytest
+from django.utils import timezone
 
 from apps.brands.models import Brand
 from apps.campaigns.models import Bid, Campaign
@@ -31,7 +32,7 @@ def test_delete_user_completely_creator_with_bids_and_packages():
         budget_min_paise=100000,
         budget_max_paise=500000,
         platform="instagram",
-        closes_at="2026-12-31",
+        closes_at=timezone.make_aware(timezone.datetime(2026, 12, 31)),
     )
     bid = Bid.objects.create(
         campaign=campaign,
@@ -64,7 +65,7 @@ def test_delete_user_completely_brand_with_campaigns():
         budget_min_paise=100000,
         budget_max_paise=500000,
         platform="instagram",
-        closes_at="2026-12-31",
+        closes_at=timezone.make_aware(timezone.datetime(2026, 12, 31)),
     )
 
     delete_user_completely(user=brand_owner)

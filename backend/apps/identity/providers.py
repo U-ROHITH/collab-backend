@@ -38,21 +38,54 @@ def send_email_otp(email: str, code: str) -> None:
     if _console_mode():
         logger.warning("[DEV OTP] email to %s: %s", email, code)
         return
+
     subject = "Your Collab login code"
     text = f"Your login code is {code}. It expires in 5 minutes. If you didn't request it, ignore this email."
+
     if settings.RESEND_API_KEY:
+        sender = settings.RESEND_FROM_EMAIL or settings.DEFAULT_FROM_EMAIL
+        if not sender:
+            raise DeliveryError
         try:
             resp = requests.post(
                 "https://api.resend.com/emails",
                 headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
-                json={"from": settings.RESEND_FROM_EMAIL, "to": [email], "subject": subject, "text": text},
+                json={"from": sender, "to": [email], "subject": subject, "text": text},
                 timeout=_TIMEOUT,
             )
-            if resp.status_code < 300:
-                return
-            logger.error("Resend rejected email (status %s); falling back to SMTP", resp.status_code)
         except requests.RequestException as exc:
-            logger.error("Resend failed (%s); falling back to SMTP", type(exc).__name__)
+            logger.error("Resend failed (%s)", type(exc).__name__)
+            raise DeliveryError from None
+        if resp.status_code < 300:
+            return
+        logger.error("Resend rejected email (status %s)", resp.status_code)
+        raise DeliveryError
+
+    brevo_api_key = getattr(settings, "BREVO_API_KEY", "")
+    if brevo_api_key:
+        sender = getattr(settings, "BREVO_FROM_EMAIL", "") or settings.DEFAULT_FROM_EMAIL
+        if not sender:
+            raise DeliveryError
+        try:
+            resp = requests.post(
+                "https://api.brevo.com/v3/smtp/email",
+                headers={"api-key": brevo_api_key, "Content-Type": "application/json"},
+                json={
+                    "sender": {"email": sender},
+                    "to": [{"email": email}],
+                    "subject": subject,
+                    "textContent": text,
+                },
+                timeout=_TIMEOUT,
+            )
+        except requests.RequestException as exc:
+            logger.error("Brevo failed (%s)", type(exc).__name__)
+            raise DeliveryError from None
+        if resp.status_code < 300:
+            return
+        logger.error("Brevo rejected email (status %s)", resp.status_code)
+        raise DeliveryError
+
     if not settings.EMAIL_HOST:
         raise DeliveryError
     try:
@@ -60,7 +93,6 @@ def send_email_otp(email: str, code: str) -> None:
     except Exception as exc:  # noqa: BLE001
         logger.error("SMTP delivery failed: %s", type(exc).__name__)
         raise DeliveryError from None
-
 
 def _console_mode() -> bool:
     # Console delivery is a dev convenience and is refused unless DEBUG (or tests) — see settings.

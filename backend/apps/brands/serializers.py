@@ -2,7 +2,7 @@ from typing import Any
 
 from rest_framework import serializers
 
-from apps.brands.models import GSTIN_REGEX, Brand, BrandList, CartItem
+from apps.brands.models import Brand, BrandList, CartItem
 from apps.core.serializers import StrictSerializer, UsageRightsSerializer
 from apps.creators.serializers import CreatorCardOutput, PackageOutput
 
