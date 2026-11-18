@@ -1,5 +1,3 @@
-import re
-
 from django.core.exceptions import ImproperlyConfigured
 
 from .base import *  # noqa: F403
@@ -10,7 +8,6 @@ from .base import (
     DATABASES,
     OTP_DELIVERY,
     OTP_TEST_ACCOUNTS,
-    OTP_TEST_CODE,
     SECRET_KEY,
     env,
 )
@@ -33,8 +30,10 @@ if OTP_DELIVERY != "live":
     raise ImproperlyConfigured("OTP_DELIVERY must be 'live' in production.")
 if len(env("DATA_ENCRYPTION_KEY", default="")) < 32:
     raise ImproperlyConfigured("DATA_ENCRYPTION_KEY must be at least 32 chars in production.")
-if OTP_TEST_ACCOUNTS and not re.fullmatch(r"\d{6}", OTP_TEST_CODE):
-    raise ImproperlyConfigured("OTP_TEST_CODE must be 6 digits when OTP_TEST_ACCOUNTS is set.")
+if OTP_TEST_ACCOUNTS or env("OTP_TEST_CODE", default=""):
+    raise ImproperlyConfigured(
+        "OTP_TEST_ACCOUNTS and OTP_TEST_CODE must be empty in production."
+    )
 for required in (
     "JWT_SIGNING_KEY",
     "DATA_ENCRYPTION_KEY",
