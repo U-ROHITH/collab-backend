@@ -329,13 +329,141 @@ Guard: `IsAdminUser` + `RequireAdminRoles("trust_safety")`.
 
 *Note: Calling `approve`, `reject`, or `request-info` on an already-decided verification request returns `409 ALREADY_DECIDED`.*
 
+### Campaign Moderation Endpoints (`trust_safety` & `super_admin`)
+Guard: `IsAdminUser` + `RequireAdminRoles("trust_safety")`.
+
+| Method | Path | Auth / Role | Description |
+|---|---|---|---|
+| GET | `/v1/admin/campaigns/` | `trust_safety` | Query params: `filter` (`pending` [default], `all`, `live`, `hidden`, `rejected`, `removed`, `flagged`), `brandId`, `limit` (default 20, max 100), `cursor`. Pending/flagged sorted oldest-first. Returns list with `meta.counts` (`pending`, `live`, `hidden`, `rejected`, `removed`, `flagged`, `total`). |
+| GET | `/v1/admin/campaigns/{id}/` | `trust_safety` | Detailed campaign data, brand profile, brief signals check (`brand_verified`, `business_email`, `budget_sanity`, `solicitation_check`), `bidsSummary` (`total`, `pending`, `held`, `selected`, `rejected`), and `moderation` history. |
+| POST | `/v1/admin/campaigns/{id}/approve/` | `trust_safety` | Approves pending campaign (`live`), unfreezes any `held` bids back to `pending`, logs audit (`campaign.approve`), and notifies brand owner (`campaign_approved`). Only valid from `pending_review` (else `409 INVALID_STATUS_TRANSITION`). |
+| POST | `/v1/admin/campaigns/{id}/reject/` | `trust_safety` | Body: `{reason: "...", note?: "...", ruleBroken?: "..."}` (`reason` min 4 chars). Rejects campaign (`rejected`), logs audit (`campaign.reject`), and notifies brand owner (`campaign_rejected`). Only valid from `pending_review` (else `409`). |
+| POST | `/v1/admin/campaigns/{id}/hide/` | `trust_safety` | Body: `{reason: "..."}`. Hides a live campaign from public search and freezes open bids to `held`, logs audit (`campaign.hide`), and notifies brand owner (`campaign_hidden`). Only valid from `live` (else `409`). |
+| POST | `/v1/admin/campaigns/{id}/remove/` | `trust_safety` | Body: `{reason: "..."}`. Permanently removes live/hidden campaign (`removed`), declines open/held bids with reason (`rejected`), logs audit (`campaign.remove`), and notifies brand owner and bidders. Valid from `live` or `hidden` (else `409`). |
+| POST | `/v1/admin/campaigns/{id}/restore/` | `trust_safety` | Body: `{reason: "..."}`. Restores a hidden campaign back to `live`, unfreezes `held` bids back to `pending`, logs audit (`campaign.restore`), and notifies brand owner (`campaign_restored`). Only valid from `hidden` (else `409`). |
+
+#### Campaign Moderation Lifecycle Rules
+- **Submission:** New campaigns created via `POST /v1/campaigns/` are saved in `pending_review` with `submitted_at = now()`, notifying admins (`campaign_submitted`).
+- **Resubmission:** If an owning brand edits a `live` campaign's reviewed fields (`title`, `brief`, `deliverables`, `budgetMin`, `budgetMax`, `usageRights`, `platform`) via `PATCH /v1/campaigns/{id}/`, the campaign re-enters `pending_review`, records `changed_fields`, freezes open bids (`held`), and re-notifies admins. If editing a `rejected` campaign, it moves back to `pending_review`.
+- **Visibility:** Creators and unauthenticated guests can only view and bid on campaigns in `live` status. Owning brands can view their campaigns in any moderation status along with a `moderation` object (`{ status, reason, changedFields }`).
+- **Bidding / Selection Guard:** Bidding on or selecting bids for non-live campaigns is rejected with `409 CAMPAIGN_NOT_LIVE` or `409 BID_NOT_PENDING`.
+
+### User Accounts & Curation (`/v1/admin/users/`)
+Guard: `IsAdminUser` + `RequireAdminRoles("trust_safety")`.
+
+#### User Accounts Management
+| Method | Path | Auth / Role | Description |
+|---|---|---|---|
+| POST | `/v1/admin/users/{userId}/suspend/` | `trust_safety` | Body: `{reason: "...", note?: "..."}`. Sets user `status="suspended"`, revokes active sessions/tokens, clears creator `featured`, freezes open bids for brand campaigns, logs `account.suspend`, and notifies user. |
+| POST | `/v1/admin/users/{userId}/reactivate/` | `trust_safety` | Body: `{reason: "..."}`. Sets user `status="active"`, logs `account.reactivate`, and notifies user. |
+| POST | `/v1/admin/users/{userId}/password-reset/` | `trust_safety` | Generates a 30-min password reset OTP/link challenge without exposing password, logs `account.password_reset`, and dispatches notification. |
+| GET | `/v1/admin/users/{userId}/sessions/` | `trust_safety` | Lists active outstanding JWT sessions (`id`, `createdAt`, `expiresAt`, `ipAddress`, `device`). |
+| POST | `/v1/admin/users/{userId}/sessions/revoke/` | `trust_safety` | Blacklists all active sessions for the user, increments password version to invalidate access tokens immediately, logs `account.sessions_invalidate`, and notifies user. |
+
+#### Creator Curation & Detail
+| Method | Path | Auth / Role | Description |
+|---|---|---|---|
+| GET | `/v1/admin/users/creators/` | `trust_safety` | Filters: `q`, `status`, `kyc`, `badge`, `featured`, `hasReports`, `limit`, `cursor`. Returns creator cards with user status, kyc, badges, and `meta.total`, `meta.suspended`. |
+| GET | `/v1/admin/users/creators/{id}/` | `trust_safety` | Returns full creator profile, platform stats, order fulfillment metrics (`completedOrders`, `inProgressOrders`, `disputedOrders`, `completionRate`, `gmvPaise`), recent orders, abuse reports, and `adminHistory` audit log. |
+| PATCH | `/v1/admin/users/creators/{id}/` | `trust_safety` | Body: `{badges?: [...], tags?: [...], featured?: bool}`. Tags capped at 4 from categories; `Verified Pro` requires verified KYC. Logs granular audit actions (`creator.badge_add`, `creator.badge_remove`, `creator.tags_edit`, `creator.feature`, `creator.unfeature`). |
+
+#### Brand Accounts & Activity
+| Method | Path | Auth / Role | Description |
+|---|---|---|---|
+| GET | `/v1/admin/users/brands/` | `trust_safety` | Filters: `q`, `status`, `verified`, `postingSpike`, `hasReports`, `limit`, `cursor`. Identifies `postingSpike: true` when >= 5 campaigns in last 30 days and > 2x monthly average. |
+| GET | `/v1/admin/users/brands/{id}/` | `trust_safety` | Returns full brand profile, statutory details (`companyPan`, `cin`), campaign/order metrics, recent orders, abuse reports, and `adminHistory`. |
+
+#### Categories & Marketplace Featured Ordering
+| Method | Path | Auth / Role | Description |
+|---|---|---|---|
+| GET | `/v1/admin/users/categories/` | `trust_safety` | Lists categories with creator counts. |
+| POST | `/v1/admin/users/categories/` | `trust_safety` | Body: `{name, description?, icon?}`. Creates category and logs `category.add`. |
+| PATCH | `/v1/admin/users/categories/{id}/` | `trust_safety` | Renames/updates category and cascades rename to creator profiles; logs `category.rename`. |
+| POST | `/v1/admin/users/categories/{id}/merge/` | `trust_safety` | Body: `{targetCategoryId}`. Migrates creator profiles and tags to target category, deactivates source, and logs `category.merge`. |
+| GET | `/v1/admin/users/featured-creators/` | `trust_safety` | Returns ordered list of featured creators followed by eligible unfeatured candidates. |
+| PUT | `/v1/admin/users/featured-creators/order/` | `trust_safety` | Body: `{creatorIds: [...]}`. Updates creator `featured_order` ranks and logs `featured.reorder`. |
+
+### Moderation Endpoints (`/v1/admin/moderation/`)
+Guard: `IsAdminUser` + `RequireAdminRoles("trust_safety")`.
+
+#### Review Moderation
+| Method | Path | Auth / Role | Description |
+|---|---|---|---|
+| GET | `/v1/admin/moderation/reviews/` | `trust_safety` | Query params: `status` (`visible`\|`flagged`\|`removed`), `limit`, `cursor`. Auto-flags reviews created without a completed order. |
+| POST | `/v1/admin/moderation/reviews/{id}/delete/` | `trust_safety` | Body: `{reason: "..."}`. Sets `status="removed"`, recalculates creator rating sum/count from visible reviews, logs `review.delete`, and notifies reviewer. |
+| POST | `/v1/admin/moderation/reviews/{id}/keep/` | `trust_safety` | Body: `{note?: "..."}`. Clears flag, marks `status="visible"`, adds review stars to creator rating, and logs `review.keep`. |
+
+#### Abuse Reports & Bid Anomaly Detection
+| Method | Path | Auth / Role | Description |
+|---|---|---|---|
+| POST | `/v1/abuse-reports/` | anyone (authenticated) | Body: `{targetType: "creator"\|"brand"\|"campaign"\|"review"\|"message", targetId, reason, detail?}`. One active report per user per target. |
+| GET | `/v1/admin/moderation/abuse-reports/` | `trust_safety` | Lists abuse reports with filter by `status` and `targetType`. |
+| GET | `/v1/admin/moderation/abuse-reports/{id}/` | `trust_safety` | Detailed report view with target entity context and reporter summary. |
+| POST | `/v1/admin/moderation/abuse-reports/{id}/remove/` | `trust_safety` | Removes/hides target entity, closes report as `action_taken`, logs audit, and notifies reporter. |
+| POST | `/v1/admin/moderation/abuse-reports/{id}/warn/` | `trust_safety` | Sends policy warning to target owner, marks report `action_taken`, logs audit, and notifies reporter. |
+| POST | `/v1/admin/moderation/abuse-reports/{id}/suspend-account/` | `trust_safety` | Suspends target user's account, invalidates sessions, marks report `action_taken`, and notifies parties. |
+| POST | `/v1/admin/moderation/abuse-reports/{id}/dismiss/` | `trust_safety` | Dismisses report with reason and logs audit. |
+| GET | `/v1/admin/moderation/bid-alerts/` | `trust_safety` | Lists anomaly bid alerts (`spike_bids`, `rapid_submission`, `identical_text`, `coordinated_accounts`). |
+| POST | `/v1/admin/moderation/bid-alerts/{id}/freeze-bids/` | `trust_safety` | Freezes suspicious campaign bids to `held`, logs audit (`bid_alert.freeze_bids`). |
+| POST | `/v1/admin/moderation/bid-alerts/{id}/suspend-accounts/` | `trust_safety` | Suspends involved bidder accounts, logs audit (`bid_alert.suspend_accounts`). |
+| POST | `/v1/admin/moderation/bid-alerts/{id}/warn/` | `trust_safety` | Sends warning notifications to creators/accounts, logs audit. |
+| POST | `/v1/admin/moderation/bid-alerts/{id}/dismiss/` | `trust_safety` | Dismisses alert with note and logs audit. |
+
+### Finance & Escrow Controls (`/v1/admin/finance/`)
+
+#### Order Pipeline & Escrow Overrides
+| Method | Path | Auth / Role | Description |
+|---|---|---|---|
+| GET | `/v1/admin/finance/orders/` | `finance`, `super_admin` | Lists orders with filters by `status`, `search`, pagination. |
+| GET | `/v1/admin/finance/orders/pipeline/` | `finance`, `super_admin` | Order counts and amounts grouped by status, plus `heldTotal` and `disputedTotal` (all in integer paise). |
+| GET | `/v1/admin/finance/orders/{id}/` | `finance`, `super_admin` | Detailed order view with parties, 5-line breakdown (`price`, `commission`, `gateway`, `creatorGets`, `linkloomNet`), payout status, and timeline with audit hashes. |
+| POST | `/v1/admin/finance/orders/{id}/force-release/` | `super_admin` only | Requires `Idempotency-Key` header and body `{reason: "..."}` (min 12 chars). Releases escrow to creator wallet, marks order `completed`, resolves open dispute, logs `escrow.force_release`, notifies parties. Replays with identical key return original result safely. |
+| POST | `/v1/admin/finance/orders/{id}/refund/` | `super_admin` only | Requires `Idempotency-Key` header and body `{reason: "..."}` (min 12 chars). Refunds order escrow to brand, marks order `refunded`, cancels unpaid payouts, resolves open dispute, logs `escrow.refund`, notifies parties. Replays with identical key return original result safely. |
+
+#### Disputes & Mediation
+| Method | Path | Auth / Role | Description |
+|---|---|---|---|
+| POST | `/v1/orders/{id}/disputes/` | Brand or Creator on order | Body: `{reason, kind?: "dispute"\|"payment_complaint", evidenceUploadIds?: [...]}`. Transitions order to `disputed`, preserves `status_before_dispute`, sets SLA deadline (+72h / +24h), notifies admins. |
+| POST | `/v1/orders/{id}/disputes/{disputeId}/response/` | Counterparty only | Body: `{statement, evidenceUploadIds?: [...]}`. Submits counterparty statement and evidence, notifies parties and admins. |
+| GET | `/v1/admin/finance/disputes/` | `trust_safety`, `super_admin`, `finance` | Lists disputes (`status=open\|resolved`), sorted open-first by SLA due date. |
+| GET | `/v1/admin/finance/disputes/{id}/` | `trust_safety`, `super_admin`, `finance` | Full dispute detail including counterparty statement, evidence files, decision metadata, and audit entry. |
+| POST | `/v1/admin/finance/disputes/{id}/resolve/` | `trust_safety`, `super_admin` | Body: `{reason}` (min 4 chars). Restores order to `status_before_dispute` without moving money, marks dispute resolved, logs `dispute.resolve`, notifies both parties. |
+
+#### Platform Rules & Financial Reporting
+| Method | Path | Auth / Role | Description |
+|---|---|---|---|
+| GET | `/v1/admin/finance/rules/` | `finance`, `super_admin`, `trust_safety` | Returns active platform commission & payment gateway percentages `{commissionPct, gatewayPct}`. |
+| GET | `/v1/admin/finance/summary/` | `finance`, `super_admin` | Financial KPIs and monthly trailing summaries (`?months=3\|6`): GMV, commission earned, payouts settled, escrow held, refund rate. |
+| GET | `/v1/admin/finance/payouts/` | `finance`, `super_admin` | Payout/withdrawal list (`?status=pending\|scheduled\|paid\|rejected`), with masked account numbers and UPI IDs. |
+| GET | `/v1/admin/finance/payouts/export/` | `finance`, `super_admin` | Exports payout ledger as CSV with masked account credentials. Logs `payouts.export` audit entry. |
+
+### System & Command Dashboard (`/v1/admin/system/`)
+
+#### Command Dashboard & Admin Notifications
+| Method | Path | Auth / Role | Description |
+|---|---|---|---|
+| GET | `/v1/admin/system/dashboard/` | Any admin | Real-time command dashboard: account stats, orders & escrow held, verifications pending/over-SLA, pending campaigns & oldest submission, open abuse reports, open disputes & next SLA, active alerts, recent 5 audit entries, and cryptographic audit chain status `{ok, count}`. |
+| GET | `/v1/admin/system/counts/` | Any admin | Lightweight badge counts for sidebar badges (`verifications`, `campaigns`, `reports`, `disputes`, `alerts`, `unreadNotifications`). |
+| GET | `/v1/admin/system/notifications/` | Any admin | Paginated admin notification feed with unread filter. |
+| GET | `/v1/admin/system/notifications/unread-count/` | Any admin | Admin unread notification count. |
+| POST | `/v1/admin/system/notifications/{id}/read/` | Any admin | Mark single admin notification as read. |
+| POST | `/v1/admin/system/notifications/read-all/` | Any admin | Mark all admin notifications as read. |
+
+#### Hash-Chained Audit Log & Append-Only Verification
+| Method | Path | Auth / Role | Description |
+|---|---|---|---|
+| GET | `/v1/admin/system/audit-log/` | Any admin | Paginated audit log feed with filters by `action`, `adminId`, `targetType`, `dateFrom`, `dateTo`. |
+| GET | `/v1/admin/system/audit-log/verify/` | Any admin | Traverses and cryptographically recalculates the entire SHA-256 hash chain from genesis to tail (`{ok, count, brokenAtId?}`). Records `audit.verify` audit entry. |
+| GET | `/v1/admin/system/audit-log/export/` | `super_admin` only | Exports complete audit trail as CSV. Records `audit.export` audit entry. |
+| GET | `/v1/uploads/{id}/download-url/` | Admins & Asset Owners | Admins accessing signed media URLs automatically record an `upload.view` audit entry. |
+
 ### Admin Roles
 - `super_admin`: Full access across all admin modules (creator moderation, dispute resolutions, financial overrides, user management).
 - `trust_safety`: Creator approvals, KYC verification, dispute mediation, and abuse reports.
 - `finance`: Escrow inspection, payout batches, refund approvals, and TDS/GST reconciliation.
 
 ### Audit Logging
-Every sensitive state change and auth lifecycle action is executed within `transaction.atomic()` via `record_audit(admin, action, target, detail)`, storing an immutable SHA-256 entry hash and returning `{ id, hash }`.
+Every sensitive state change and auth lifecycle action is executed within `transaction.atomic()` via `record_audit(admin, action, target, detail)` (or model save), creating an append-only cryptographic SHA-256 hash chain linked to the preceding entry (`prev_hash`). Audit records cannot be deleted (`AUDIT_LOG_IMMUTABLE`). Integrity can be verified on-demand via `GET /v1/admin/audit-log/verify/`.
 
 ## Live updates (WebSocket)
 `POST /v1/realtime/ticket/` → `{ticket}` (valid 30 s, single use), then connect to `wss://collab-api-ewju.onrender.com/ws/?ticket=<ticket>`.
@@ -347,4 +475,4 @@ At `/<DJANGO_ADMIN_URL>`, with TOTP 2FA. Setup: `uv run python manage.py grant_a
 **Test logins (QA / app-store review):** Render env `OTP_TEST_ACCOUNTS` (comma-separated `+91XXXXXXXXXX` or lower-case emails) and `OTP_TEST_CODE` (6 digits, required when the list is set). Those destinations get no SMS/email; the code is always `OTP_TEST_CODE`, and the hourly limit doesn't apply (the per-IP limit still does). The normal OTP flow is unchanged. **Empty both before public launch.**
 
 ## Not built yet (next phases)
-Razorpay payments/escrow/payouts/refunds + webhook, GST invoice / TDS statement PDFs, web push + email notifications, Instagram/YouTube connect, brand dashboard/reporting, admin APIs for disputes/refunds, Celery jobs (auto-approve, payment expiry).
+Razorpay payments/escrow/payouts/refunds + webhook, GST invoice / TDS statement PDFs, web push + email notifications, Instagram/YouTube connect, brand dashboard/reporting, Celery jobs (auto-approve, payment expiry).

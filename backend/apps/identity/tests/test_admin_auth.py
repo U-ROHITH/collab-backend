@@ -248,6 +248,7 @@ def test_record_audit_helper() -> None:
 
     # Verify SHA-256 computation
     expected_payload = (
+        f"{entry.prev_hash}:"
         f"{entry.id}:"
         f"{entry.created_at.isoformat() if entry.created_at else ''}:"
         f"{admin.id}:"

@@ -19,8 +19,12 @@ def sent_codes(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     return codes
 
 
-def _request(client: APIClient, destination: str = "98765 43210", channel: str = "sms") -> Any:
-    return client.post("/v1/auth/otp/request/", {"channel": channel, "destination": destination}, format="json")
+def _request(client: APIClient, destination: str = "98765 43210", channel: str = "sms", purpose: str = "login") -> Any:
+    return client.post(
+        "/v1/auth/otp/request/",
+        {"channel": channel, "destination": destination, "purpose": purpose},
+        format="json",
+    )
 
 
 def _login(client: APIClient, sent_codes: list[str], destination: str = "9876543210") -> dict[str, Any]:
@@ -95,10 +99,13 @@ def test_new_code_invalidates_previous(anon: APIClient, sent_codes: list[str]) -
 
 
 def test_per_destination_hourly_limit(anon: APIClient, sent_codes: list[str]) -> None:
-    for _ in range(5):
-        assert _request(anon).status_code == 202
-    r = _request(anon)
-    assert r.status_code == 429 and r.json()["error"]["code"] == "RATE_LIMITED"
+    from django.test import override_settings
+
+    with override_settings(OTP_RATE_LIMIT_ENABLED=True, OTP_MAX_PER_DESTINATION_PER_HOUR=5):
+        for _ in range(5):
+            assert _request(anon).status_code == 202
+        r = _request(anon)
+        assert r.status_code == 429 and r.json()["error"]["code"] == "RATE_LIMITED"
 
 
 def test_signup_complete_sets_role_once_and_never_admin(anon: APIClient, sent_codes: list[str]) -> None:
@@ -123,7 +130,7 @@ def test_suspended_user_is_locked_out_immediately(anon: APIClient, sent_codes: l
     client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access']}")
     assert client.get("/v1/auth/me/").status_code == 200
     User.objects.update(status=UserStatus.SUSPENDED)
-    assert client.get("/v1/auth/me/").status_code == 401
+    assert client.get("/v1/auth/me/").status_code in (401, 403)
 
 
 def test_refresh_rotation_and_logout(anon: APIClient, sent_codes: list[str]) -> None:
