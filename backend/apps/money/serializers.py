@@ -2,7 +2,7 @@ from typing import Any
 
 from rest_framework import serializers
 
-from apps.core.serializers import MoneyField, StrictSerializer
+from apps.core.serializers import MoneyField, StrictSerializer, UsageRightsSerializer
 from apps.creators.serializers import money
 from apps.money.models import PaymentReceipt, WalletTransaction, WithdrawalRequest
 
@@ -11,7 +11,14 @@ class PaymentCheckoutInput(StrictSerializer):
     orderId = serializers.UUIDField(required=False)  # noqa: N815
     packageId = serializers.UUIDField(required=False)  # noqa: N815
     cart = serializers.BooleanField(required=False, default=False)
-    currency = serializers.CharField(max_length=3, required=False, default="INR")
+    currency = serializers.ChoiceField(choices=["INR"], required=False, default="INR")  # order amounts are INR paise
+    usageRights = UsageRightsSerializer(required=False)  # noqa: N815  required for packageId / cart
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        if not attrs.get("orderId") and "usageRights" not in attrs:
+            # A new order's terms are the brand's choice: never filled in for them.
+            raise serializers.ValidationError({"usageRights": ["Choose usage rights for this purchase."]})
+        return attrs
 
 
 class CheckoutSessionOutput(serializers.Serializer):
@@ -105,7 +112,7 @@ class WithdrawalInput(StrictSerializer):
     amount = MoneyField(required=False)
     amountPaise = serializers.IntegerField(min_value=1, required=False)  # noqa: N815
     payoutMethod = serializers.ChoiceField(choices=["upi", "bank_transfer"])  # noqa: N815
-    payoutDetails = serializers.JSONField()  # noqa: N815
+    payoutDetails = serializers.DictField(child=serializers.CharField(max_length=120))  # noqa: N815
 
 
 class WithdrawalOutput(serializers.ModelSerializer):

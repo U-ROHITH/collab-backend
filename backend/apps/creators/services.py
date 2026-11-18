@@ -43,15 +43,6 @@ def create_creator_for_user(*, user: User, display_name: str) -> Creator:
     return Creator.objects.create(user=user, display_name=display_name, slug=_unique_slug(display_name))
 
 
-def create_catalogue_creator(*, actor: User, display_name: str, **fields: Any) -> Creator:
-    """Admin-created profile for the initial catalogue (no user until claimed)."""
-    creator = Creator.objects.create(display_name=display_name, slug=_unique_slug(display_name), **fields)
-    AuditLog.objects.create(
-        actor=actor, action="creator.catalogue_created", entity_type="creator", entity_id=str(creator.pk)
-    )
-    return creator
-
-
 def _merge_platforms(creator: Creator, social_links: dict[str, Any], platforms: dict[str, Any]) -> dict[str, Any]:
     """Merge per platform: given fields overwrite, others are kept; None removes the platform (handle too)."""
     stats = {k: dict(v) for k, v in (creator.platform_stats or {}).items() if isinstance(v, dict)}
@@ -79,9 +70,17 @@ def update_creator_profile(*, creator: Creator, data: dict[str, Any]) -> Creator
 
     city = data.pop("city", None)
     region = data.pop("region", None)
-    if city or region:
-        parts = [p.strip() for p in (city, region) if p and p.strip()]
-        data["location"] = ", ".join(parts)
+    if city is not None or region is not None:
+        # Changing one half keeps the other; sending "" clears that half.
+        old_city, _, old_region = (creator.location or "").partition(",")
+        new_city = (city if city is not None else old_city).strip()
+        new_region = (region if region is not None else old_region).strip()
+        location = ", ".join(p for p in (new_city, new_region) if p)
+        if len(location) > 80:
+            from rest_framework.exceptions import ValidationError
+
+            raise ValidationError({"location": ["City and region together must be under 80 characters."]})
+        data["location"] = location
 
     instagram = data.pop("instagram", _SENTINEL)
     youtube = data.pop("youtube", _SENTINEL)
@@ -114,19 +113,7 @@ def update_creator_profile(*, creator: Creator, data: dict[str, Any]) -> Creator
 
     # Sync follower_count with platform stats or explicit followerCount
     follower_count_changed = False
-    primary = data.get("primaryPlatform") or creator.primary_platform
-    derived_follower_count = None
-    if isinstance(creator.platform_stats, dict):
-        primary_stats = creator.platform_stats.get(primary)
-        if isinstance(primary_stats, dict) and primary_stats.get("followersCount") is not None:
-            derived_follower_count = primary_stats["followersCount"]
-        else:
-            for p in ("instagram", "youtube"):
-                st = creator.platform_stats.get(p)
-                if isinstance(st, dict) and st.get("followersCount") is not None:
-                    derived_follower_count = st["followersCount"]
-                    break
-
+    derived_follower_count = creator.stats_followers(data.get("primaryPlatform"))
     if derived_follower_count is not None:
         if creator.follower_count != derived_follower_count:
             creator.follower_count = derived_follower_count
@@ -135,6 +122,10 @@ def update_creator_profile(*, creator: Creator, data: dict[str, Any]) -> Creator
         if creator.follower_count != explicit_follower_count:
             creator.follower_count = explicit_follower_count
             follower_count_changed = True
+    elif stats_changed and creator.follower_count is not None:
+        # The stats it came from were removed: don't keep showing (and filtering on) the old number.
+        creator.follower_count = None
+        follower_count_changed = True
 
     changes = {_PROFILE_FIELDS[k]: v for k, v in data.items() if k in _PROFILE_FIELDS}
     for field, value in changes.items():

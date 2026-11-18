@@ -4,6 +4,7 @@ from django.db.models import QuerySet
 from django.http import HttpRequest
 from django_otp.admin import OTPAdminSite
 
+from apps.core.exceptions import DomainError
 from apps.identity import services
 from apps.identity.models import AuditLog, User
 
@@ -23,23 +24,25 @@ class UserAdmin(admin.ModelAdmin):
     actions = ["delete_completely"]
 
     def delete_model(self, request: HttpRequest, obj: User) -> None:
-        services.delete_user_completely(user=obj)
+        self._erase(request, [obj])
 
     def delete_queryset(self, request: HttpRequest, queryset: QuerySet[User]) -> None:
-        for user in queryset:
-            services.delete_user_completely(user=user)
+        self._erase(request, list(queryset))
 
-    @admin.action(description="Delete selected users completely (cascade brands, creators, bids, orders, etc.)")
+    @admin.action(description="Erase selected users (refused for users with orders or payments)")
     def delete_completely(self, request: HttpRequest, queryset: QuerySet[User]) -> None:
-        count = 0
-        for user in queryset:
-            services.delete_user_completely(user=user)
-            count += 1
-        self.message_user(
-            request,
-            f"Successfully deleted {count} user(s) and all their associated data from everywhere.",
-            messages.SUCCESS,
-        )
+        self._erase(request, list(queryset))
+
+    def _erase(self, request: HttpRequest, users: list[User]) -> None:
+        erased = 0
+        for user in users:
+            try:
+                services.delete_user_completely(user=user)
+                erased += 1
+            except DomainError as exc:
+                self.message_user(request, f"{user}: {exc.message}", messages.ERROR)
+        if erased:
+            self.message_user(request, f"Erased {erased} user(s).", messages.SUCCESS)
 
 
 @admin.register(AuditLog)

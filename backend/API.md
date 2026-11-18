@@ -12,6 +12,18 @@ React apps should generate types from the schema: `npx openapi-typescript http:/
 - **Lockout:** 10 wrong passwords per account per IP, and 50 per account across all IPs, per 15 minutes → `429 RATE_LIMITED`. Someone guessing from elsewhere can't lock the owner out. If Redis is unavailable, limits are counted per server process until it recovers (deliberate: sign-in keeps working).
 - Password rules on reset now also reject passwords too similar to the account's email, as signup does.
 
+## Changes on 2026-11-17 (backend audit)
+- **OTP sign-in sends `purpose: "login"`.** Omitting `purpose` means sign-up: `409 USER_EXISTS` for an existing account. Limits: 5 codes per phone/email per hour (`429 RATE_LIMITED`), 5 requests and 10 verifies per minute per IP.
+- **`/signup/complete/` never saves `phone`** (the field is accepted and ignored). A number joins an account only by signing in with an SMS code for it.
+- **`POST /v1/checkout/`**: `usageRights` (same object as campaigns) is required with `packageId` or `cart`; `currency` must be `INR`. The same package can be bought any number of times. Checking out an order again returns its open session.
+- **Payments**: a payment for an order cancelled meanwhile returns a receipt with `status: "needs_refund"`.
+- **Withdrawals**: `POST /v1/creators/me/withdrawals/` returns `403 PAYOUTS_NOT_LIVE` until payouts launch.
+- **Creators**: `dob` is only on `/v1/creators/me/` (no longer public). `avatarUrl` must be `https://…`, max 500; `null` or `""` removes the photo. `location` max 80. Sending only `city` keeps `region` (and vice versa); `""` clears it. Removing follower stats clears `followerCount`. `?category=` matches whole categories, case-insensitive.
+- **Campaigns**: once a creator has bid, `brief`, `deliverables`, `platform` and `usageRights` can't change (`409 CAMPAIGN_TERMS_LOCKED`). `closesAt` edits must be in the future (`422 INVALID_CLOSES_AT`).
+- **Reviews**: allowed once the brand has approved the work (`approved` or `completed`).
+- **Conversations**: the list is ordered by last message, and opening a thread no longer moves it.
+- **Admin API** (`/v1/admin/*`) needs the token from the admin sign-in with TOTP; app-login tokens get 403.
+
 ## Changes on 2026-11-12 (frontend issues report)
 **This file is the reference for what's live.** The "API Reference v1" PDF describes an unmerged branch: `/v1/auth/email/*`, `/v1/creators/me/avatar/`, `/v1/checkout/`, `/v1/payments/verify/`, `/v1/creators/me/wallet/`, `/v1/creators/me/withdrawals/` and `/v1/reports/*` are **not live**; don't build on them. Everything in the tables below is live.
 
@@ -51,7 +63,7 @@ Deliverables have no status of their own; the order status says where the work i
 ## Changes on 2026-11-09 (launch requests)
 - **Guest view:** `GET /v1/creators/`, `GET /v1/creators/{id}/` and `GET /v1/campaigns/` work without a token. Creator cards never include contact, payout or approval details. Guests (and users mid-signup or awaiting creator approval) get open campaigns with `brief: null` and `usageRights: null`. Campaign detail, bids and every write still need a signed-in user.
 - **Google sign-in:** `POST /v1/auth/google/` `{idToken, role?}` → `{access, refresh, user}`, the same shape as OTP verify. `idToken` is the Google Identity Services credential for client `1042168589486-k7e30v1tao2ooepsb5lp339m7anlvq44.apps.googleusercontent.com`. Accounts match on the Google-verified email, so an existing OTP account signs in to the same account. `role` (`brand`/`creator`) only applies to an account with no role yet; otherwise read `user.role`. Errors: `401 GOOGLE_TOKEN_INVALID`, `401 GOOGLE_EMAIL_UNVERIFIED`.
-- **KYC:** `user.kycStatus` on `/v1/auth/me/` (and every auth response) is `not_started | in_progress | pending | verified | rejected`. Steps are under `/v1/kyc/` (below). **Creating a campaign, placing a bid, sending an offer, accepting an offer and cart checkout return `403 KYC_REQUIRED` until KYC is `verified`.** Declining an offer doesn't need KYC.
+- **KYC:** `user.kycStatus` on `/v1/auth/me/` (and every auth response) is `not_started | in_progress | pending | verified | rejected`. Steps are under `/v1/kyc/` (below). **Creators:** placing a bid and accepting an offer return `403 KYC_REQUIRED` until KYC is `verified`, and orders need the creator verified (`422 COUNTERPARTY_KYC_PENDING` otherwise). Declining an offer doesn't need KYC. **Brands are never blocked by KYC**: brand KYC is voluntary (refunds and compliance) and uses `/v1/brands/me/kyc/` (below).
 - **Platform stats:** `PATCH /v1/creators/me/` accepts platform stats either top-level (`instagram`, `youtube`) or inside `platforms: {instagram|youtube: {handle?, followersCount?, engagementRate?, avgViews?} | null}`. Handles are normalized: leading `@` is stripped, pasted profile URLs (e.g. `https://www.instagram.com/democreator/`) become bare handles, and `url` is exposed per platform. Unknown nested fields (e.g. `followers`, `er`) return `400 VALIDATION_ERROR` naming the invalid field. `engagementRate` is a percentage (`0.0` - `100.0`). Top-level `followerCount` is kept consistent with primary platform's `followersCount`. Flat `instagram` / `youtube` string handles are also returned and kept in sync with `platforms.<platform>.handle`. Every platform currently returns `verified: false` until social account OAuth is connected.
 - **Earnings:** `GET /v1/creators/me/earnings/` → `{inEscrow, earned, tdsDeducted, ordersInEscrow, ordersEarned, payoutsEnabled}`. **`payoutsEnabled` is `false` for launch: hide withdraw/payout-history screens.** "Earned" means the brand approved the work. Money doesn't reach a bank until Razorpay payouts are built.
 - **Fix:** a bad or expired refresh token now returns `401 AUTH_INVALID` with "Your session has expired or is invalid. Please sign in again." (no Python debug text).
@@ -274,7 +286,18 @@ One conversation per brand–creator pair, allowed once a bid, offer or order ex
 | POST | `/v1/conversations/{id}/messages/` | `{text?, attachmentUploadId?}`; 4,000 chars max; 30/min |
 | POST | `/v1/conversations/{id}/read/` | marks read |
 
-## KYC
+## Brand KYC (voluntary)
+Company PAN + bank account. Never blocks a brand action. Each save puts it on the admin verification desk.
+
+| Method | Path | Who | Notes |
+|---|---|---|---|
+| GET | `/v1/brands/me/kyc/` | brand | `{status: pending\|submitted\|verified\|rejected, panVerified, bankVerified, rejectionReason}`. Never 404: nothing saved reads as `pending`. |
+| POST | `/v1/brands/me/kyc/pan/` | brand | `{pan}` (uppercased; `ABCDE1234F` format) → same shape, `status: submitted`. |
+| POST | `/v1/brands/me/kyc/bank/` | brand | `{accountNumber (9-18 digits), ifsc, accountName}` → same shape, `status: submitted`. |
+
+`panVerified` / `bankVerified` turn true only when an admin approves on the desk (only the fields that were submitted). Changing a detail later resets its flag and sends it back for review; rejection clears both and fills `rejectionReason`. Full PAN and account number are stored encrypted and never returned.
+
+## KYC (creators)
 Upload the ID document first: `POST /v1/uploads/` with `kind: "kyc_document"` (JPEG/PNG/WebP/PDF, 10 MB, private), PUT the file, then `POST /v1/uploads/{id}/complete/`. Every KYC response has the same shape:
 ```json
 {

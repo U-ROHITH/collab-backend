@@ -97,9 +97,7 @@ def test_verification_suite(capsys: Any) -> None:
     results["2_partial_merge"] = {"request": payload_2, "response": res_2["data"]["platforms"]}
 
     # 3. Sending null removes platform cleanly
-    payload_3 = {
-        "youtube": None
-    }
+    payload_3 = {"youtube": None}
     r3 = client.patch(ME, payload_3, format="json")
     assert r3.status_code == 200
     res_3 = r3.json()
@@ -110,9 +108,7 @@ def test_verification_suite(capsys: Any) -> None:
     results["3_null_clears_platform"] = {"request": payload_3, "response": res_3["data"]["platforms"]}
 
     # 4. Plain string handle update
-    payload_4 = {
-        "youtube": "AnanyaCooksOfficial"
-    }
+    payload_4 = {"youtube": "AnanyaCooksOfficial"}
     r4 = client.patch(ME, payload_4, format="json")
     assert r4.status_code == 200
     res_4 = r4.json()
@@ -169,7 +165,7 @@ def test_verification_suite(capsys: Any) -> None:
         "followerCount": 99999,
         "instagram": {
             "followersCount": 25000,
-        }
+        },
     }
     r7 = client.patch(ME, payload_7, format="json")
     assert r7.status_code == 200
@@ -181,10 +177,11 @@ def test_verification_suite(capsys: Any) -> None:
 
     # Create Creator 2 with 5000 followers
     client_2, creator_2 = _create_creator(phone="+919876500002", name="Rohan Small")
-    client_2.patch(ME, {
-        "primaryPlatform": "instagram",
-        "instagram": {"handle": "rohan.small", "followersCount": 5000}
-    }, format="json")
+    client_2.patch(
+        ME,
+        {"primaryPlatform": "instagram", "instagram": {"handle": "rohan.small", "followersCount": 5000}},
+        format="json",
+    )
     creator_2.refresh_from_db()
     assert creator_2.follower_count == 5000
 

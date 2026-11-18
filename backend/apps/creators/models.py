@@ -83,6 +83,21 @@ class Creator(BaseModel):
     def is_approved(self) -> bool:
         return self.approval_status == ApprovalStatus.APPROVED
 
+    def stats_followers(self, primary: str | None = None) -> int | None:
+        """Followers from the platform stats: the primary platform's, else any platform's."""
+        stats = self.platform_stats if isinstance(self.platform_stats, dict) else {}
+        for platform in (primary or self.primary_platform, "instagram", "youtube"):
+            entry = stats.get(platform)
+            if isinstance(entry, dict) and entry.get("followersCount") is not None:
+                return entry["followersCount"]
+        return None
+
+    @property
+    def followers(self) -> int | None:
+        """What cards show: the stats, else the stored count."""
+        n = self.stats_followers()
+        return n if n is not None else self.follower_count
+
     @property
     def rating(self) -> float | None:
         return round(self.rating_sum / self.rating_count, 2) if self.rating_count else None

@@ -14,6 +14,7 @@ from django.contrib.auth.hashers import make_password
 from django.core import signing
 from django.core.cache import cache
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
@@ -236,6 +237,12 @@ def password_version(user: User) -> str:
     return hashlib.sha256(user.password.encode()).hexdigest()[:12]
 
 
+def revoke_all_sessions(user: User) -> None:
+    """Blacklist every live refresh token of this user in one insert (expired ones are useless already)."""
+    live = OutstandingToken.objects.filter(user=user, expires_at__gt=timezone.now())
+    BlacklistedToken.objects.bulk_create([BlacklistedToken(token=t) for t in live], ignore_conflicts=True)
+
+
 def issue_tokens(user: User, *, method: str | None = None) -> AuthResult:
     refresh = RefreshToken.for_user(user)
     if method:
@@ -371,10 +378,7 @@ def _set_password_everywhere(user: User, password: str, *, action: str) -> None:
         locked = User.objects.select_for_update().get(pk=user.pk)
         locked.set_password(password)
         locked.save(update_fields=["password", "updated_at"])
-        BlacklistedToken.objects.bulk_create(
-            [BlacklistedToken(token=t) for t in OutstandingToken.objects.filter(user=locked)],
-            ignore_conflicts=True,
-        )
+        revoke_all_sessions(locked)
         AuditLog.objects.create(actor=locked, action=action, entity_type="user", entity_id=str(locked.pk), metadata={})
     user.password = locked.password
 
@@ -387,7 +391,6 @@ def complete_signup(
     brand_name: str = "",
     display_name: str = "",
     password: str | None = None,
-    phone: str = "",
 ) -> User:
     """Set role exactly once and create the matching profile. `admin` is never allowed here."""
     from apps.brands.services import create_brand_for_user
@@ -405,13 +408,6 @@ def complete_signup(
         if password:
             locked.set_password(password)
             fields.append("password")
-        if phone and not locked.phone:
-            import contextlib
-            with contextlib.suppress(Exception):
-                clean_phone = normalize_destination(OtpChannel.SMS, phone)
-                if not User.objects.filter(phone=clean_phone).exclude(pk=locked.pk).exists():
-                    locked.phone = clean_phone
-                    fields.append("phone")
         locked.save(update_fields=fields)
         if role == Role.BRAND:
             create_brand_for_user(user=locked, name=brand_name)  # never the owner's personal name
@@ -611,74 +607,74 @@ def grant_admin(*, email: str, password: str, admin_role: str = AdminRole.SUPER_
 
 
 def delete_user_completely(*, user: User) -> None:
-    """Cascade delete a user and all their associated data across all apps."""
+    """Erase an account and its personal data (Django admin action).
+
+    Refused while the user has orders or payments: those are financial and tax (GST/TDS) records shared with the
+    other party, and they must be kept. Suspend such accounts instead. The audit log is kept too (its actor
+    becomes empty), since it's append-only.
+    """
+    from apps.brands.models import Brand, BrandList, CartItem
+    from apps.campaigns.models import Bid, Campaign
+    from apps.creators.models import Creator, CreatorPackage
+    from apps.kyc.models import KycProfile
+    from apps.messaging.models import Conversation
+    from apps.money.models import CreatorWallet, PaymentReceipt, PaymentSession, WithdrawalRequest
+    from apps.offers.models import Offer
+    from apps.orders.models import Order
+
     with transaction.atomic():
-        # 1. Clean up Creator profile and relations
-        creator = getattr(user, "creator", None)
-        if not creator:
-            from apps.creators.models import Creator
+        user = User.objects.select_for_update().get(pk=user.pk)
+        creator = Creator.objects.filter(user=user).first()
+        brand = Brand.objects.filter(owner=user).first()
+        has_financial_records = (creator is not None and Order.objects.filter(creator=creator).exists()) or (
+            brand is not None
+            and (Order.objects.filter(brand=brand).exists() or PaymentReceipt.objects.filter(brand=brand).exists())
+        )
+        if has_financial_records:
+            raise Conflict(
+                "This account has orders or payments, which must be kept as financial records. Suspend it instead.",
+                code="USER_HAS_FINANCIAL_RECORDS",
+            )
 
-            creator = Creator.objects.filter(user=user).first()
-        if creator:
-            from apps.campaigns.models import Bid
-            from apps.creators.models import CreatorPackage
-            from apps.money.models import CreatorWallet, WithdrawalRequest
-            from apps.offers.models import Offer
-            from apps.orders.models import Order, Review
+        # Conversations (and their messages) with this user's profile
+        conversations = Q(pk__in=[])
+        if creator is not None:
+            conversations |= Q(creator=creator)
+        if brand is not None:
+            conversations |= Q(brand=brand)
+        Conversation.objects.filter(conversations).delete()
 
-            Review.objects.filter(creator=creator).delete()
+        if creator is not None:
             Bid.objects.filter(creator=creator).delete()
             Offer.objects.filter(creator=creator).delete()
             CreatorPackage.objects.filter(creator=creator).delete()
-            Order.objects.filter(creator=creator).delete()
             wallets = CreatorWallet.objects.filter(creator=creator)
             WithdrawalRequest.objects.filter(wallet__in=wallets).delete()
             wallets.delete()
             creator.delete()
 
-        # 2. Clean up Brand profile and relations
-        brand = getattr(user, "brand", None)
-        if not brand:
-            from apps.brands.models import Brand
-
-            brand = Brand.objects.filter(owner=user).first()
-        if brand:
-            from apps.brands.models import BrandList, CartItem
-            from apps.campaigns.models import Bid, Campaign
-            from apps.money.models import PaymentReceipt, PaymentSession
-            from apps.offers.models import Offer
-            from apps.orders.models import Order
-
+        if brand is not None:
             campaigns = Campaign.objects.filter(brand=brand)
             Bid.objects.filter(campaign__in=campaigns).delete()
             campaigns.delete()
-
             CartItem.objects.filter(brand=brand).delete()
             BrandList.objects.filter(brand=brand).delete()
             Offer.objects.filter(brand=brand).delete()
-            Order.objects.filter(brand=brand).delete()
             PaymentSession.objects.filter(brand=brand).delete()
-            PaymentReceipt.objects.filter(brand=brand).delete()
             brand.delete()
 
-        # 3. Clean up User direct relations
+        KycProfile.objects.filter(user=user).delete()  # verification requests go with it
+
         from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
-
-        from apps.notifications.models import Notification
-        from apps.orders.models import Dispute
-
-        Notification.objects.filter(user=user).delete()
-        Dispute.objects.filter(opened_by=user).delete()
-        Dispute.objects.filter(resolved_by=user).delete()
 
         tokens = OutstandingToken.objects.filter(user=user)
         BlacklistedToken.objects.filter(token__in=tokens).delete()
         tokens.delete()
-
-        AuditLog.objects.filter(actor=user).delete()
         if user.email:
             OtpChallenge.objects.filter(destination__iexact=user.email).delete()
         if user.phone:
             OtpChallenge.objects.filter(destination=user.phone).delete()
-
-        user.delete()
+        AuditLog.objects.create(
+            actor=None, action="user.erased", entity_type="user", entity_id=str(user.pk), metadata={}
+        )
+        user.delete()  # notifications, uploads and the rest cascade

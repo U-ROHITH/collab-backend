@@ -21,7 +21,7 @@ def test_delete_user_completely_creator_with_bids_and_packages():
         price_paise=100000,
         delivery_days=3,
     )
-    
+
     brand_owner = User.objects.create_user(email="brand_owner@example.com", role=Role.BRAND)
     brand = Brand.objects.create(owner=brand_owner, name="Test Brand")
     campaign = Campaign.objects.create(
@@ -72,3 +72,82 @@ def test_delete_user_completely_brand_with_campaigns():
     assert not User.objects.filter(pk=brand_owner.pk).exists()
     assert not Brand.objects.filter(pk=brand.pk).exists()
     assert not Campaign.objects.filter(pk=campaign.pk).exists()
+
+
+# --- realistic accounts ---------------------------------------------------------------------------
+
+
+def _with_kyc_and_chat(brand_client, creator_client) -> None:  # type: ignore[no-untyped-def]
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from tests.fixtures import USAGE_RIGHTS
+
+    offer = {
+        "creatorId": str(creator_client.user.creator.id),
+        "deliverable": "1 Reel",
+        "budget": 500_000,
+        "deadline": (timezone.now() + timedelta(days=5)).isoformat(),
+        "message": "hi",
+        "usageRights": USAGE_RIGHTS,
+    }
+    assert brand_client.post("/v1/offers/", offer, format="json").status_code == 201
+    cid = brand_client.post(
+        "/v1/conversations/", {"creatorId": str(creator_client.user.creator.id)}, format="json"
+    ).json()["data"]["id"]
+    assert brand_client.post(f"/v1/conversations/{cid}/messages/", {"text": "hello"}, format="json").status_code == 201
+    creator_client.post(f"/v1/conversations/{cid}/messages/", {"text": "hi back"}, format="json")
+
+
+def test_creator_with_kyc_chat_and_offers_is_fully_deleted(make_brand, make_creator) -> None:  # type: ignore[no-untyped-def]
+    from apps.kyc.models import KycProfile
+    from apps.messaging.models import Conversation
+
+    brand, creator = make_brand("Keep Co"), make_creator("Delete Me")
+    _with_kyc_and_chat(brand, creator)
+    user = creator.user
+    assert KycProfile.objects.filter(user=user).exists()
+
+    delete_user_completely(user=user)
+
+    assert not User.objects.filter(pk=user.pk).exists()
+    assert not KycProfile.objects.filter(user_id=user.pk).exists()
+    assert not Conversation.objects.filter(creator__user_id=user.pk).exists()
+    assert Brand.objects.filter(owner=brand.user).exists()  # the other side is untouched
+
+
+def test_brand_with_chat_is_fully_deleted(make_brand, make_creator) -> None:  # type: ignore[no-untyped-def]
+    brand, creator = make_brand("Delete Co"), make_creator("Keep Me")
+    _with_kyc_and_chat(brand, creator)
+    delete_user_completely(user=brand.user)
+    assert not User.objects.filter(pk=brand.user.pk).exists()
+    assert Creator.objects.filter(user=creator.user).exists()
+
+
+def test_user_with_orders_is_refused_and_nothing_is_deleted(brand, creator, package) -> None:  # type: ignore[no-untyped-def]
+    from apps.core.exceptions import Conflict
+    from apps.identity.models import AuditLog
+    from apps.orders import services as order_services
+    from apps.orders.models import Order
+    from tests.fixtures import USAGE_RIGHTS
+
+    order_services.create_order(
+        actor=brand.user,
+        brand=brand.user.brand,
+        creator=creator.user.creator,
+        source_type="package",
+        source_id=package.pk,
+        title="t",
+        deliverables="d",
+        brief="b",
+        subtotal_paise=package.price_paise,
+        delivery_days=3,
+        usage_rights=USAGE_RIGHTS,
+    )
+    audit_rows = AuditLog.objects.count()
+    with pytest.raises(Conflict) as exc:
+        delete_user_completely(user=creator.user)
+    assert exc.value.code == "USER_HAS_FINANCIAL_RECORDS"
+    assert User.objects.filter(pk=creator.user.pk).exists() and Order.objects.count() == 1
+    assert AuditLog.objects.count() == audit_rows

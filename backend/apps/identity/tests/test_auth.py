@@ -20,11 +20,9 @@ def sent_codes(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 
 def _request(client: APIClient, destination: str = "98765 43210", channel: str = "sms", purpose: str = "login") -> Any:
-    return client.post(
-        "/v1/auth/otp/request/",
-        {"channel": channel, "destination": destination, "purpose": purpose},
-        format="json",
-    )
+    # Sign-in flow. Omitting purpose means "sign-up" (409 USER_EXISTS for existing accounts) since 9c4fd30.
+    body = {"channel": channel, "destination": destination, "purpose": purpose}
+    return client.post("/v1/auth/otp/request/", body, format="json")
 
 
 def _login(client: APIClient, sent_codes: list[str], destination: str = "9876543210") -> dict[str, Any]:

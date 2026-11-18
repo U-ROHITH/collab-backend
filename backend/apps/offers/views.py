@@ -29,7 +29,6 @@ class BrandOffersView(ListAPIView):
 
     @extend_schema(request=OfferInput, responses={201: OfferOutput})
     def post(self, request: Request) -> Response:
-        require_kyc(request.user)
         data = OfferInput(data=request.data)
         data.is_valid(raise_exception=True)
         offer = services.send_offer(brand=my_brand(request), data=data.validated_data)

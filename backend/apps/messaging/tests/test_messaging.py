@@ -103,3 +103,23 @@ def test_attachment_shared_only_with_conversation(brand: Any, creator: Any, make
     assert again.status_code == 409
     assert creator.get(f"/v1/uploads/{up['id']}/download-url/").status_code == 200
     assert make_brand("Nosy").get(f"/v1/uploads/{up['id']}/download-url/").status_code == 404
+
+
+def test_inbox_is_ordered_by_last_message_and_reading_doesnt_reorder(brand: Any, make_creator: Any) -> None:
+    older, newer = make_creator("Older Chat"), make_creator("Newer Chat")
+    ids = {}
+    for c in (older, newer):
+        send_offer(brand, c)
+        cid = brand.post("/v1/conversations/", {"creatorId": str(c.user.creator.id)}, format="json").json()["data"]
+        ids[c] = cid["id"]
+        brand.post(f"/v1/conversations/{ids[c]}/messages/", {"text": "hello"}, format="json")
+
+    def order() -> list[str]:
+        return [c["id"] for c in brand.get("/v1/conversations/").json()["data"]]
+
+    assert order() == [ids[newer], ids[older]]
+    older.post(f"/v1/conversations/{ids[older]}/read/")  # opening an old thread
+    brand.post(f"/v1/conversations/{ids[older]}/read/")
+    assert order() == [ids[newer], ids[older]]
+    brand.post(f"/v1/conversations/{ids[older]}/messages/", {"text": "again"}, format="json")
+    assert order() == [ids[older], ids[newer]]

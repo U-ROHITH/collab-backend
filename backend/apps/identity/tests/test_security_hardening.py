@@ -23,7 +23,7 @@ def sent_codes(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     return codes
 
 
-def _code(client: APIClient, sent: list[str], purpose: str = "login", dest: str = EMAIL) -> tuple[str, str]:
+def _code(client: APIClient, sent: list[str], purpose: str | None = "login", dest: str = EMAIL) -> tuple[str, str]:
     body: dict[str, Any] = {"channel": "email", "destination": dest}
     if purpose:
         body["purpose"] = purpose

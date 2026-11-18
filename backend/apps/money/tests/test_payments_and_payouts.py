@@ -66,7 +66,7 @@ def test_checkout_initialization_from_cart(brand: APIClient, creator: Any, packa
 
     resp = brand.post(
         "/v1/checkout/",
-        {"cart": True},
+        {"cart": True, "usageRights": USAGE_RIGHTS},
         format="json",
     )
     assert resp.status_code == 201, resp.json()
@@ -230,7 +230,8 @@ def test_creator_wallet_balance_and_earnings(brand: APIClient, creator: Any, pac
     assert wallet_data3["transactions"][0]["type"] == "credit_order"
 
 
-def test_creator_withdrawal_validations_and_processing(creator: Any) -> None:
+def test_creator_withdrawal_validations_and_processing(settings: Any, creator: Any) -> None:
+    settings.PAYOUTS_ENABLED = True  # closed (403 PAYOUTS_NOT_LIVE) until payouts launch
     # Setup wallet with available balance of ₹2,000 (200,000 paise)
     wallet, _ = CreatorWallet.objects.get_or_create(creator=creator.user.creator)
     wallet.balance_paise = 200_000

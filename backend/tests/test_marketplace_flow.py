@@ -83,10 +83,9 @@ def test_campaign_bid_order_lifecycle(brand: Any, creator: Any, campaign_payload
     # second approve is a state conflict, not a double effect
     assert brand.post(f"/v1/orders/{order['id']}/approve/").status_code == 409
 
-    # review only after completion
-    assert brand.post(f"/v1/orders/{order['id']}/review/", {"stars": 5}, format="json").status_code == 422
-    system_event(order_id=order["id"], event="complete")
+    # review once the brand has approved the work (completion needs the payout job, not built yet)
     ok(brand.post(f"/v1/orders/{order['id']}/review/", {"stars": 5, "text": "Great"}, format="json"), 201)
+    system_event(order_id=order["id"], event="complete")
     assert brand.post(f"/v1/orders/{order['id']}/review/", {"stars": 4}, format="json").status_code == 409
     detail = ok(brand.get(f"/v1/creators/{order['creator']['id']}/"))
     assert detail["rating"] == 5.0 and detail["reviewCount"] == 1

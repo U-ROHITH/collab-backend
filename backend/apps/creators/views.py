@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.exceptions import NotFound
+from apps.core.public_cache import cache_for_guests
 from apps.creators import selectors, services
 from apps.creators.models import Creator
 from apps.creators.serializers import (
@@ -86,6 +87,7 @@ class CreatorSearchView(ListAPIView):
     serializer_class = CreatorCardOutput
 
     @extend_schema(parameters=[CreatorSearchParams])
+    @cache_for_guests
     def get(self, request: Request, *args: object, **kwargs: object) -> Response:
         return super().get(request, *args, **kwargs)
 
@@ -101,6 +103,7 @@ class CreatorDetailView(APIView):
     permission_classes = [AllowAny]
 
     @extend_schema(responses=CreatorDetailOutput)
+    @cache_for_guests
     def get(self, request: Request, creator_id: UUID) -> Response:
         user = getattr(request, "user", None)
         viewer = user if user and user.is_authenticated else None

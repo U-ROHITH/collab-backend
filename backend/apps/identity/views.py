@@ -6,7 +6,6 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
-from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
@@ -178,8 +177,7 @@ class LogoutView(APIView):
 class LogoutAllView(APIView):
     @extend_schema(request=None, responses={204: None})
     def post(self, request: Request) -> Response:
-        for outstanding in OutstandingToken.objects.filter(user=request.user):
-            BlacklistedToken.objects.get_or_create(token=outstanding)
+        services.revoke_all_sessions(request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -197,7 +195,6 @@ class SignupCompleteView(APIView):
         data = SignupCompleteInput(data=request.data, context={"user": request.user})
         data.is_valid(raise_exception=True)
         v = data.validated_data
-        phone = v.get("phone") or v.get("phoneNumber") or v.get("mobile") or v.get("mobileNumber") or ""
         user = services.complete_signup(
             user=request.user,
             role=v["role"],
@@ -205,7 +202,17 @@ class SignupCompleteView(APIView):
             brand_name=v.get("brandName", ""),
             display_name=v.get("displayName", ""),
             password=v.get("password") or None,
-            phone=phone,
         )
         return Response(MeOutput(user).data, status=status.HTTP_201_CREATED)
 
+from apps.identity.admin_auth_views import (
+    AdminLoginView,
+    AdminLogoutView,
+    AdminMfaVerifyView,
+)
+
+__all__ = [
+    "AdminLoginView",
+    "AdminLogoutView",
+    "AdminMfaVerifyView",
+]

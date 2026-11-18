@@ -20,6 +20,34 @@ class PanInput(StrictSerializer):
         return value
 
 
+class BrandPanInput(StrictSerializer):
+    pan = serializers.CharField(max_length=10, help_text="Company PAN, e.g. AABCP1234D")
+
+    validate_pan = PanInput.validate_pan
+
+
+class BrandBankInput(StrictSerializer):
+    accountNumber = serializers.RegexField(r"^\d{9,18}$", help_text="9-18 digits")  # noqa: N815
+    ifsc = serializers.CharField(max_length=11)
+    accountName = serializers.CharField(max_length=120, help_text="Name on the bank account")  # noqa: N815
+
+    def validate_ifsc(self, value: str) -> str:
+        value = value.strip().upper()
+        if not _IFSC.match(value):
+            raise serializers.ValidationError("Enter a valid IFSC (e.g. HDFC0001234).")
+        return value
+
+    def validate_accountName(self, value: str) -> str:  # noqa: N802
+        return value.strip()
+
+
+class BrandKycOutput(serializers.Serializer):
+    status = serializers.ChoiceField(choices=["pending", "submitted", "verified", "rejected"])
+    panVerified = serializers.BooleanField()  # noqa: N815
+    bankVerified = serializers.BooleanField()  # noqa: N815
+    rejectionReason = serializers.CharField(allow_blank=True)  # noqa: N815
+
+
 class IdDocumentInput(StrictSerializer):
     idType = serializers.ChoiceField(choices=IdType.choices)  # noqa: N815
     uploadId = serializers.UUIDField(help_text="A READY upload of kind kyc_document")  # noqa: N815

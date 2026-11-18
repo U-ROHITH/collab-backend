@@ -1,4 +1,5 @@
 from django.db.models import Count, F, OuterRef, Q, QuerySet, Subquery
+from django.db.models.functions import Coalesce
 
 from apps.identity.models import Role, User
 from apps.messaging.models import Conversation, Message
@@ -31,5 +32,6 @@ def conversations_with_summary(user: User) -> QuerySet[Conversation]:
             last_sender_id=Subquery(latest.values("sender_id")[:1]),
             last_attachment_id=Subquery(latest.values("attachment_id")[:1]),
             unread=Count("messages", filter=from_other & after_my_read),
+            activity_at=Coalesce("last_message_at", "created_at"),
         )
     )

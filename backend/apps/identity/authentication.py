@@ -13,26 +13,36 @@ class ActiveUserJWTAuthentication(JWTAuthentication):
     locks out a stolen session immediately rather than when its access token expires.
     """
 
-    def get_user(self, validated_token: Any) -> Any:
+    def _load_user(self, validated_token: Any) -> Any:
+        """The user plus profile, brand and KYC in one query (views read them on almost every request)."""
         from rest_framework_simplejwt.settings import api_settings
 
         from apps.core.exceptions import Forbidden
         from apps.identity.models import UserStatus
-        from apps.identity.services import password_version
 
-        user_id = validated_token.get(api_settings.USER_ID_CLAIM)
         try:
-            user = self.user_model.objects.get(**{api_settings.USER_ID_FIELD: user_id})
-        except self.user_model.DoesNotExist:
-            raise AuthenticationFailed("User not found", code="user_not_found") from None
-
+            user_id = validated_token[api_settings.USER_ID_CLAIM]
+        except KeyError:
+            raise AuthenticationFailed("Token contained no recognizable user identification.") from None
+        user = (
+            self.user_model.objects.select_related("creator", "brand", "kyc")
+            .filter(**{api_settings.USER_ID_FIELD: user_id})
+            .first()
+        )
+        if user is None:
+            raise AuthenticationFailed("User not found or inactive.", code="user_not_found")
         if user.status == UserStatus.SUSPENDED:
             raise Forbidden("Account is suspended.", code="ACCOUNT_SUSPENDED")
         if user.status == UserStatus.DEACTIVATED:
             raise Forbidden("Account is deactivated.", code="ACCOUNT_DEACTIVATED")
         if not user.is_active:
-            raise AuthenticationFailed("User is inactive", code="user_inactive")
+            raise AuthenticationFailed("User not found or inactive.", code="user_not_found")
+        return user
 
+    def get_user(self, validated_token: Any) -> Any:
+        from apps.identity.services import password_version
+
+        user = self._load_user(validated_token)
         issued_for = validated_token.get("pwv")
         # Only accounts with a password have one to protect; this also keeps sessions issued before
         # this check existed (older fingerprint format) working for code-only accounts.

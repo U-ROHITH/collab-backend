@@ -91,8 +91,11 @@ def transition(order: Order, event: str, role: str) -> tuple[str, str]:
     order.version += 1
     if rule.to == S.FUNDED:
         order.funded_at = now
-        if order.deadline is None:
-            order.deadline = now + timedelta(days=order.delivery_days)
+        # The creator always gets their full delivery window from funding. Otherwise an order funded late (e.g.
+        # an offer funded after its deadline) could be cancelled by the brand as "missed" straight away.
+        earliest = now + timedelta(days=order.delivery_days)
+        if order.deadline is None or order.deadline < earliest:
+            order.deadline = earliest
     elif rule.to == S.DRAFT_SUBMITTED:
         order.last_submitted_at = now
     elif rule.to == S.REVISION_REQUESTED:

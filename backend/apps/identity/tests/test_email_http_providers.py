@@ -74,4 +74,3 @@ def test_brevo_http_client_success():
             assert kwargs["headers"]["api-key"] == "xkeysib-test-12345"
             assert kwargs["json"]["sender"]["email"] == "verify@linkloom.app"
             assert kwargs["json"]["to"] == [{"email": "user@example.com"}]
-

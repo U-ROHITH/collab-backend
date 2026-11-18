@@ -72,6 +72,11 @@ class IsAdminUser(BasePermission):
 
         if user.role != Role.ADMIN or not user.is_staff:
             return False
+        # Only tokens from the admin sign-in (password + TOTP) carry aal2. An admin's app-login, OTP or
+        # password-reset token must not reach the admin API, or the second factor is optional.
+        token = getattr(request, "auth", None)
+        if token is None or token.get("aal") != "aal2":
+            return False
 
         # Role check if specific roles are required (either on permission or view)
         roles = self.allowed_roles or getattr(view, "required_admin_roles", None)
@@ -92,4 +97,3 @@ def RequireAdminRoles(*roles: str) -> type[IsAdminUser]:
             super().__init__(*roles)
 
     return _ConfiguredAdminRole
-

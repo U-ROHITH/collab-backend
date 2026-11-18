@@ -22,7 +22,9 @@ from apps.messaging.serializers import ConversationOpenInput, ConversationOutput
 
 
 class ConversationPagination(EnvelopeCursorPagination):
-    ordering = ("-updated_at", "-id")
+    # Last activity (annotated in conversations_with_summary). Not updated_at: reading a thread bumps that, which
+    # reordered the inbox and let a cursor skip or repeat rows.
+    ordering = ("-activity_at", "-id")
 
 
 class ConversationListCreateView(ListAPIView):

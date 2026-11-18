@@ -172,9 +172,10 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "anon": "60/min",
         "user": "120/min",
-        "otp_request": env("THROTTLE_OTP_REQUEST", default="120/min"),
-        "otp_verify": env("THROTTLE_OTP_VERIFY", default="120/min"),
-        "login": "60/min",
+        # Each OTP request can send a paid SMS: keep these tight (loosen per environment for QA if needed).
+        "otp_request": env("THROTTLE_OTP_REQUEST", default="5/min"),
+        "otp_verify": env("THROTTLE_OTP_VERIFY", default="10/min"),
+        "login": "10/min",
         "bids": "30/hour",
         "offers": "50/day",
         "writes": "60/min",
@@ -251,8 +252,9 @@ GOOGLE_OAUTH_CLIENT_IDS = env.list(
 OTP_DELIVERY = env("OTP_DELIVERY", default="live")  # "live" | "console" (console only allowed with DEBUG)
 OTP_TTL_SECONDS = 300
 OTP_MAX_ATTEMPTS = 5
-OTP_RATE_LIMIT_ENABLED = env.bool("OTP_RATE_LIMIT_ENABLED", default=False)  # Disabled for testing; set True in prod
-OTP_MAX_PER_DESTINATION_PER_HOUR = env.int("OTP_MAX_PER_DESTINATION_PER_HOUR", default=1000)
+# Per phone/email: stops SMS/email bombing of one person. OTP_TEST_ACCOUNTS are exempt for QA.
+OTP_RATE_LIMIT_ENABLED = env.bool("OTP_RATE_LIMIT_ENABLED", default=True)
+OTP_MAX_PER_DESTINATION_PER_HOUR = env.int("OTP_MAX_PER_DESTINATION_PER_HOUR", default=5)
 # Test logins (QA, app-store review): these destinations get OTP_TEST_CODE instead of a real SMS/email
 # and skip the hourly limit. Normalized form: +91XXXXXXXXXX or lower-case email. Empty both before launch.
 OTP_TEST_ACCOUNTS = env.list("OTP_TEST_ACCOUNTS", default=[])
@@ -260,6 +262,9 @@ OTP_TEST_CODE = env("OTP_TEST_CODE", default="")
 TWO_FACTOR_API_KEY = env("TWO_FACTOR_API_KEY", default="")
 RESEND_API_KEY = env("RESEND_API_KEY", default="")
 RESEND_FROM_EMAIL = env("RESEND_FROM_EMAIL", default="")
+# Brevo: works with a single verified sender address (no DNS needed). Used after Resend, or alone.
+BREVO_API_KEY = env("BREVO_API_KEY", default="")
+BREVO_FROM_EMAIL = env("BREVO_FROM_EMAIL", default="")
 
 EMAIL_HOST = env("EMAIL_HOST", default="")
 EMAIL_PORT = env.int("EMAIL_PORT", default=587)

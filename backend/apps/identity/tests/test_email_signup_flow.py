@@ -52,3 +52,15 @@ def test_second_creator_with_same_display_name_gets_unique_slug(sent_codes: list
 def test_signup_without_bearer_is_401_not_500() -> None:
     resp = APIClient().post("/v1/auth/signup/complete/", FRONTEND_PAYLOAD, format="json")
     assert resp.status_code == 401
+
+
+def test_unverified_phone_at_signup_is_not_attached(sent_codes: list[str]) -> None:
+    """A phone is a login identifier: attaching one without an SMS code would let an attacker claim a
+    victim's number, so the victim's later SMS sign-in would land in the attacker's account."""
+    from apps.identity.models import User
+
+    client = _verified_client(sent_codes, "attacker@example.com")
+    resp = client.post("/v1/auth/signup/complete/", {**FRONTEND_PAYLOAD, "phone": "9876543210"}, format="json")
+    assert resp.status_code == 201, resp.json()
+    assert User.objects.get(email="attacker@example.com").phone is None
+    assert not User.objects.filter(phone="+919876543210").exists()

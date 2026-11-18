@@ -1,3 +1,5 @@
+from collections.abc import Callable
+from typing import Any
 from uuid import UUID
 
 from django.db import transaction
@@ -18,12 +20,14 @@ from apps.kyc.admin_serializers import (
     AdminVerificationRejectInput,
     AdminVerificationRequestInfoInput,
 )
+from apps.kyc.brand_kyc import mark_reviewed
 from apps.kyc.models import (
     KycStatus,
     VerificationKind,
     VerificationRequest,
     VerificationStatus,
 )
+from apps.kyc.services import approval_side_effects
 from apps.notifications.services import notify
 
 
@@ -115,74 +119,90 @@ class AdminVerificationDetailView(APIView):
         return Response(AdminVerificationDetailOutput(vr).data)
 
 
+def _decide(
+    request: Request,
+    verification_id: UUID,
+    *,
+    vr_status: str,
+    kyc_changes: dict[str, Any],
+    audit_action: str,
+    audit_detail: dict[str, Any],
+    notification: dict[str, Any],
+    vr_changes: dict[str, Any] | None = None,
+    before_save: Callable[[VerificationRequest], None] | None = None,
+    after_save: Callable[[VerificationRequest], None] | None = None,
+) -> Response:
+    """One decision on an open verification request: lock it, update it and the KYC profile, audit, notify."""
+    now = timezone.now()
+    with transaction.atomic():
+        vr = (
+            VerificationRequest.objects.select_for_update()
+            .select_related("user", "kyc_profile")
+            .filter(pk=verification_id)
+            .first()
+        )
+        if vr is None:
+            raise NotFound("Verification request not found.")
+        if vr.status not in (VerificationStatus.PENDING, VerificationStatus.INFO_REQUESTED):
+            raise Conflict("Verification request has already been decided.", code="ALREADY_DECIDED")
+        if before_save:
+            before_save(vr)
+        for field, value in {
+            "status": vr_status,
+            "decided_at": now,
+            "decided_by": request.user,
+            **(vr_changes or {}),
+        }.items():
+            setattr(vr, field, value)
+        vr.save()
+        kyc = vr.kyc_profile
+        for field, value in {"reviewed_at": now, "reviewed_by": request.user, **kyc_changes}.items():
+            setattr(kyc, field, value)
+        kyc.save()
+        if after_save:
+            after_save(vr)
+        audit = record_audit(
+            admin=request.user,
+            action=audit_action,
+            target=f"verification:{vr.id}",
+            detail={"user_id": str(vr.user_id), **audit_detail},
+        )
+    notify(user_id=vr.user_id, data={"verificationId": str(vr.id), **notification.pop("data", {})}, **notification)
+    return Response({"verification": AdminVerificationDetailOutput(vr).data, "audit": audit})
+
+
+def _no_blocking_checks(vr: VerificationRequest) -> None:
+    if any(c.get("blocking") is True for c in vr.checks or []):
+        raise Conflict("Verification has blocking checks that must be resolved.", code="VERIFICATION_BLOCKED")
+
+
+def _on_approved(vr: VerificationRequest) -> None:
+    mark_reviewed(vr.kyc_profile, approved=True)
+    approval_side_effects(kind=vr.kind, user_id=vr.user_id, checks=vr.checks)
+
+
 @extend_schema(tags=["Admin - Verifications"])
 class AdminVerificationApproveView(APIView):
-    """Approve a verification request if all checks pass."""
+    """Approve a verification request if no automated check blocks it."""
 
     permission_classes = [RequireAdminRoles(AdminRole.TRUST_SAFETY)]
 
     @extend_schema(request=None, responses={200: AdminVerificationActionResult})
     def post(self, request: Request, verification_id: UUID) -> Response:
-        with transaction.atomic():
-            vr = (
-                VerificationRequest.objects.select_for_update()
-                .select_related("user", "kyc_profile")
-                .filter(pk=verification_id)
-                .first()
-            )
-            if vr is None:
-                raise NotFound("Verification request not found.")
-
-            if vr.status not in (VerificationStatus.PENDING, VerificationStatus.INFO_REQUESTED):
-                raise Conflict("Verification request has already been decided.", code="ALREADY_DECIDED")
-
-            # Check for blocking automated checks
-            checks = vr.checks or []
-            has_blocking = any(c.get("blocking") is True for c in checks)
-            if has_blocking:
-                raise Conflict("Verification has blocking checks that must be resolved.", code="VERIFICATION_BLOCKED")
-
-            vr.status = VerificationStatus.APPROVED
-            vr.decided_at = timezone.now()
-            vr.decided_by = request.user
-            vr.save(update_fields=["status", "decided_at", "decided_by", "updated_at"])
-
-            kyc = vr.kyc_profile
-            kyc.status = KycStatus.VERIFIED
-            kyc.reviewed_at = timezone.now()
-            kyc.reviewed_by = request.user
-            kyc.rejection_reason = ""
-            kyc.save(update_fields=["status", "reviewed_at", "reviewed_by", "rejection_reason", "updated_at"])
-
-            if vr.kind == VerificationKind.CREATOR:
-                from apps.creators.models import ApprovalStatus, Creator
-
-                Creator.objects.filter(user=vr.user).update(approval_status=ApprovalStatus.APPROVED)
-            elif vr.kind == VerificationKind.BRAND:
-                from apps.brands.models import Brand
-
-                Brand.objects.filter(owner=vr.user).update(reg_verified=True, gstin_status="active")
-
-            audit = record_audit(
-                admin=request.user,
-                action="verification.approve",
-                target=f"verification:{vr.id}",
-                detail={"user_id": str(vr.user_id), "kind": vr.kind},
-            )
-
-        notify(
-            user_id=vr.user_id,
-            type="kyc_verified",
-            title="KYC Verified",
-            body="Your KYC verification has been approved.",
-            data={"verificationId": str(vr.id)},
-        )
-
-        return Response(
-            {
-                "verification": AdminVerificationDetailOutput(vr).data,
-                "audit": audit,
-            }
+        return _decide(
+            request,
+            verification_id,
+            vr_status=VerificationStatus.APPROVED,
+            kyc_changes={"status": KycStatus.VERIFIED, "rejection_reason": ""},
+            before_save=_no_blocking_checks,
+            after_save=_on_approved,
+            audit_action="verification.approve",
+            audit_detail={},
+            notification={
+                "type": "kyc_verified",
+                "title": "KYC Verified",
+                "body": "Your KYC verification has been approved.",
+            },
         )
 
 
@@ -194,159 +214,55 @@ class AdminVerificationRejectView(APIView):
 
     @extend_schema(request=AdminVerificationRejectInput, responses={200: AdminVerificationActionResult})
     def post(self, request: Request, verification_id: UUID) -> Response:
-        input_serializer = AdminVerificationRejectInput(data=request.data)
-        input_serializer.is_valid(raise_exception=True)
-        reason = input_serializer.validated_data["reason"]
-        note = input_serializer.validated_data.get("note", "")
-
-        with transaction.atomic():
-            vr = (
-                VerificationRequest.objects.select_for_update()
-                .select_related("user", "kyc_profile")
-                .filter(pk=verification_id)
-                .first()
-            )
-            if vr is None:
-                raise NotFound("Verification request not found.")
-
-            if vr.status not in (VerificationStatus.PENDING, VerificationStatus.INFO_REQUESTED):
-                raise Conflict("Verification request has already been decided.", code="ALREADY_DECIDED")
-
-            vr.status = VerificationStatus.REJECTED
-            vr.decision_reason = reason
-            vr.decision_note = note
-            vr.decided_at = timezone.now()
-            vr.decided_by = request.user
-            vr.save(
-                update_fields=[
-                    "status",
-                    "decision_reason",
-                    "decision_note",
-                    "decided_at",
-                    "decided_by",
-                    "updated_at",
-                ]
-            )
-
-            kyc = vr.kyc_profile
-            kyc.status = KycStatus.REJECTED
-            kyc.rejection_reason = reason
-            kyc.review_message = reason
-            kyc.reviewed_at = timezone.now()
-            kyc.reviewed_by = request.user
-            kyc.save(
-                update_fields=[
-                    "status",
-                    "rejection_reason",
-                    "review_message",
-                    "reviewed_at",
-                    "reviewed_by",
-                    "updated_at",
-                ]
-            )
-
-            audit = record_audit(
-                admin=request.user,
-                action="verification.reject",
-                target=f"verification:{vr.id}",
-                detail={"user_id": str(vr.user_id), "reason": reason, "note": note},
-            )
-
-        notify(
-            user_id=vr.user_id,
-            type="kyc_rejected",
-            title="KYC Verification Rejected",
-            body=reason,
-            data={"verificationId": str(vr.id), "reason": reason},
-        )
-
-        return Response(
-            {
-                "verification": AdminVerificationDetailOutput(vr).data,
-                "audit": audit,
-            }
+        data = AdminVerificationRejectInput(data=request.data)
+        data.is_valid(raise_exception=True)
+        reason, note = data.validated_data["reason"], data.validated_data.get("note", "")
+        return _decide(
+            request,
+            verification_id,
+            vr_status=VerificationStatus.REJECTED,
+            vr_changes={"decision_reason": reason, "decision_note": note},
+            kyc_changes={
+                "status": KycStatus.REJECTED,
+                "rejection_reason": reason,
+                "review_message": reason,
+                "pan_verified": False,
+                "bank_verified": False,
+            },
+            audit_action="verification.reject",
+            audit_detail={"reason": reason, "note": note},
+            notification={
+                "type": "kyc_rejected",
+                "title": "KYC Verification Rejected",
+                "body": reason,
+                "data": {"reason": reason},
+            },
         )
 
 
 @extend_schema(tags=["Admin - Verifications"])
 class AdminVerificationRequestInfoView(APIView):
-    """Request additional items/documents from applicant, setting KYC status to action_needed."""
+    """Ask the applicant for more items; their KYC becomes action_needed."""
 
     permission_classes = [RequireAdminRoles(AdminRole.TRUST_SAFETY)]
 
     @extend_schema(request=AdminVerificationRequestInfoInput, responses={200: AdminVerificationActionResult})
     def post(self, request: Request, verification_id: UUID) -> Response:
-        input_serializer = AdminVerificationRequestInfoInput(data=request.data)
-        input_serializer.is_valid(raise_exception=True)
-        items = input_serializer.validated_data["items"]
-        message = input_serializer.validated_data["message"]
-
-        with transaction.atomic():
-            vr = (
-                VerificationRequest.objects.select_for_update()
-                .select_related("user", "kyc_profile")
-                .filter(pk=verification_id)
-                .first()
-            )
-            if vr is None:
-                raise NotFound("Verification request not found.")
-
-            if vr.status not in (VerificationStatus.PENDING, VerificationStatus.INFO_REQUESTED):
-                raise Conflict("Verification request has already been decided.", code="ALREADY_DECIDED")
-
-            vr.status = VerificationStatus.INFO_REQUESTED
-            vr.requested_items = items
-            vr.decision_reason = message
-            vr.decision_note = message
-            vr.decided_at = timezone.now()
-            vr.decided_by = request.user
-            vr.save(
-                update_fields=[
-                    "status",
-                    "requested_items",
-                    "decision_reason",
-                    "decision_note",
-                    "decided_at",
-                    "decided_by",
-                    "updated_at",
-                ]
-            )
-
-            kyc = vr.kyc_profile
-            kyc.status = KycStatus.ACTION_NEEDED
-            kyc.requested_items = items
-            kyc.review_message = message
-            kyc.reviewed_at = timezone.now()
-            kyc.reviewed_by = request.user
-            kyc.save(
-                update_fields=[
-                    "status",
-                    "requested_items",
-                    "review_message",
-                    "reviewed_at",
-                    "reviewed_by",
-                    "updated_at",
-                ]
-            )
-
-            audit = record_audit(
-                admin=request.user,
-                action="verification.request_info",
-                target=f"verification:{vr.id}",
-                detail={"user_id": str(vr.user_id), "items": items, "message": message},
-            )
-
-        notify(
-            user_id=vr.user_id,
-            type="kyc_info_requested",
-            title="Additional KYC Information Requested",
-            body=message,
-            data={"verificationId": str(vr.id), "items": items, "message": message},
-        )
-
-        return Response(
-            {
-                "verification": AdminVerificationDetailOutput(vr).data,
-                "audit": audit,
-            }
+        data = AdminVerificationRequestInfoInput(data=request.data)
+        data.is_valid(raise_exception=True)
+        items, message = data.validated_data["items"], data.validated_data["message"]
+        return _decide(
+            request,
+            verification_id,
+            vr_status=VerificationStatus.INFO_REQUESTED,
+            vr_changes={"requested_items": items, "decision_reason": message, "decision_note": message},
+            kyc_changes={"status": KycStatus.ACTION_NEEDED, "requested_items": items, "review_message": message},
+            audit_action="verification.request_info",
+            audit_detail={"items": items, "message": message},
+            notification={
+                "type": "kyc_info_requested",
+                "title": "Additional KYC Information Requested",
+                "body": message,
+                "data": {"items": items, "message": message},
+            },
         )

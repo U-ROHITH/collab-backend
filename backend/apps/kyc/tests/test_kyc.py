@@ -179,14 +179,15 @@ def _assert_kyc_required(resp: Any) -> None:
     assert resp.json()["error"]["code"] == "KYC_REQUIRED"
 
 
-def test_gates_block_unverified_users(
+def test_gates_block_unverified_creators_but_never_brands(
     make_brand: Any, make_creator: Any, campaign_payload: dict[str, Any], package: Any
 ) -> None:
     brand, creator = make_brand("Verified"), make_creator("Verified Creator")
     new_brand, new_creator = make_brand("Unverified", kyc=False), make_creator("Unverified C", kyc=False)
     campaign = brand.post("/v1/campaigns/", campaign_payload, format="json").json()["data"]
 
-    _assert_kyc_required(new_brand.post("/v1/campaigns/", campaign_payload, format="json"))
+    # brand KYC is voluntary: an unverified brand can still post
+    assert new_brand.post("/v1/campaigns/", campaign_payload, format="json").status_code == 201
     bid = {"price": 800_000, "message": "hi", "deliveryDays": 5}
     _assert_kyc_required(new_creator.post(f"/v1/campaigns/{campaign['id']}/bids/", bid, format="json"))
     offer = {
@@ -197,9 +198,10 @@ def test_gates_block_unverified_users(
         "message": "Do a reel",
         "usageRights": USAGE_RIGHTS,
     }
-    _assert_kyc_required(new_brand.post("/v1/offers/", offer, format="json"))
+    assert new_brand.post("/v1/offers/", offer, format="json").status_code == 201
     new_brand.post("/v1/cart/", {"packageId": str(package.id)}, format="json")
-    _assert_kyc_required(new_brand.post("/v1/cart/checkout/", {"usageRights": USAGE_RIGHTS}, format="json"))
+    checkout = new_brand.post("/v1/cart/checkout/", {"usageRights": USAGE_RIGHTS}, format="json")
+    assert checkout.status_code == 201, checkout.json()
 
     # a verified brand sends an offer; the unverified creator can decline but not accept
     sent = brand.post("/v1/offers/", {**offer, "creatorId": str(new_creator.user.creator.id)}, format="json")

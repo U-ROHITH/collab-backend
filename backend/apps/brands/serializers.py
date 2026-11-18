@@ -16,12 +16,13 @@ class BrandOutput(serializers.ModelSerializer):
     stateCode = serializers.CharField(source="state_code")  # noqa: N815
     billingAddress = serializers.SerializerMethodField()  # noqa: N815
     billingEmail = serializers.SerializerMethodField()  # noqa: N815
-    logoUrl = serializers.SerializerMethodField()  # noqa: N815
-    avatarUrl = serializers.SerializerMethodField()  # noqa: N815
-    logo_url = serializers.SerializerMethodField()
-    avatar_url = serializers.SerializerMethodField()
-    avatar = serializers.SerializerMethodField()
-    image = serializers.SerializerMethodField()
+    # The same logo under every name the frontend reads.
+    logoUrl = serializers.SerializerMethodField(method_name="get_logo")  # noqa: N815
+    avatarUrl = serializers.SerializerMethodField(method_name="get_logo")  # noqa: N815
+    logo_url = serializers.SerializerMethodField(method_name="get_logo")
+    avatar_url = serializers.SerializerMethodField(method_name="get_logo")
+    avatar = serializers.SerializerMethodField(method_name="get_logo")
+    image = serializers.SerializerMethodField(method_name="get_logo")
     companyPan = serializers.SerializerMethodField()  # noqa: N815
     cin = serializers.CharField(allow_blank=True, allow_null=True)
     gstinStatus = serializers.CharField(source="gstin_status")  # noqa: N815
@@ -62,22 +63,7 @@ class BrandOutput(serializers.ModelSerializer):
             return None
         return f"XXXXXX{obj.company_pan[-4:]}"
 
-    def get_logoUrl(self, obj: Brand) -> str | None:  # noqa: N802
-        return obj.logo_url or None
-
-    def get_avatarUrl(self, obj: Brand) -> str | None:  # noqa: N802
-        return obj.logo_url or None
-
-    def get_logo_url(self, obj: Brand) -> str | None:
-        return obj.logo_url or None
-
-    def get_avatar_url(self, obj: Brand) -> str | None:
-        return obj.logo_url or None
-
-    def get_avatar(self, obj: Brand) -> str | None:
-        return obj.logo_url or None
-
-    def get_image(self, obj: Brand) -> str | None:
+    def get_logo(self, obj: Brand) -> str | None:
         return obj.logo_url or None
 
     def get_billingAddress(self, obj: Brand) -> Any:  # noqa: N802
@@ -89,16 +75,6 @@ class BrandOutput(serializers.ModelSerializer):
         if isinstance(obj.billing_address, dict):
             return obj.billing_address.get("email") or getattr(obj.owner, "email", "") or ""
         return getattr(obj.owner, "email", "") or ""
-
-
-class BillingAddressInput(StrictSerializer):
-    line1 = serializers.CharField(max_length=200, required=False, allow_blank=True)
-    line2 = serializers.CharField(max_length=200, required=False, allow_blank=True)
-    city = serializers.CharField(max_length=80, required=False, allow_blank=True)
-    state = serializers.CharField(max_length=80, required=False, allow_blank=True)
-    pincode = serializers.CharField(max_length=10, required=False, allow_blank=True)
-    country = serializers.CharField(max_length=80, required=False, allow_blank=True)
-    email = serializers.EmailField(required=False, allow_blank=True)
 
 
 class BrandInput(StrictSerializer):

@@ -5,12 +5,8 @@ from django.db.models import Min, Prefetch, Q, QuerySet
 from apps.creators.models import ApprovalStatus, Creator, CreatorPackage
 
 
-def _creator_detail_queryset() -> QuerySet[Creator]:
-    active_packages = CreatorPackage.objects.filter(active=True)
-    return (
-        Creator.objects.annotate(starting_price=Min("packages__price_paise", filter=Q(packages__active=True)))
-        .prefetch_related(Prefetch("packages", queryset=active_packages, to_attr="active_packages"), "media")
-    )
+def _with_starting_price(qs: QuerySet[Creator]) -> QuerySet[Creator]:
+    return qs.annotate(starting_price=Min("packages__price_paise", filter=Q(packages__active=True)))
 
 
 def public_creators() -> QuerySet[Creator]:
@@ -18,8 +14,7 @@ def public_creators() -> QuerySet[Creator]:
     from apps.identity.models import UserStatus
 
     return (
-        _creator_detail_queryset()
-        .filter(approval_status=ApprovalStatus.APPROVED)
+        _with_starting_price(Creator.objects.filter(approval_status=ApprovalStatus.APPROVED))
         .filter(Q(user__isnull=True) | Q(user__status=UserStatus.ACTIVE))
         .order_by("-featured", "featured_order", "-rating_sum", "-created_at")
     )
@@ -30,7 +25,11 @@ def search_creators(params: dict[str, Any]) -> QuerySet[Creator]:
     if q := params.get("q"):
         qs = qs.filter(Q(display_name__icontains=q) | Q(bio__icontains=q) | Q(location__icontains=q))
     if category := params.get("category"):
-        qs = qs.filter(categories__icontains=category)
+        # Whole-category, case-insensitive match ("art" must not match "Smart Home").
+        qs = qs.extra(  # noqa: S610 - parameterised
+            where=["lower(%s) IN (SELECT lower(c) FROM unnest(creators_creator.categories) AS c)"],
+            params=[category],
+        )
     if location := params.get("location"):
         qs = qs.filter(location__icontains=location)
     if platform := params.get("platform"):
@@ -47,54 +46,30 @@ def search_creators(params: dict[str, Any]) -> QuerySet[Creator]:
 
 
 def can_view_creator(viewer: Any, creator: Creator) -> bool:
-    """An approved creator is visible to anyone (including anonymous guests).
-    Pending or rejected creators are visible to:
-      1. The creator themselves (to view their profile preview / public page).
-      2. Admins / staff (for review and moderation).
-      3. Brands that have interacted with the creator:
-         - The creator applied to one of the brand's campaigns (bid).
-         - An offer exists between the brand and the creator.
-         - An order exists between the brand and the creator.
-         - A conversation exists between the brand and the creator.
-    """
-    if creator.approval_status == ApprovalStatus.APPROVED:
-        return True
-    if viewer is None or not getattr(viewer, "is_authenticated", False):
-        return False
-    if getattr(viewer, "is_staff", False) or getattr(viewer, "is_superuser", False):
-        return True
+    """Approved creators are public. Others are visible to themselves, staff/admins, and brands that already
+    work with them (bid, offer, order or conversation)."""
     from apps.identity.models import Role
 
-    if getattr(viewer, "role", None) == Role.ADMIN:
+    if creator.approval_status == ApprovalStatus.APPROVED:
         return True
-    if getattr(viewer, "creator", None) and viewer.creator.pk == creator.pk:
+    if not getattr(viewer, "is_authenticated", False):
+        return False
+    if viewer.is_staff or viewer.role == Role.ADMIN or creator.user_id == viewer.pk:
         return True
-    if creator.user_id == viewer.pk:
-        return True
-    if getattr(viewer, "role", None) == Role.BRAND:
-        brand = getattr(viewer, "brand", None)
-        if brand is None:
-            return False
-        from apps.campaigns.models import Bid
-        from apps.messaging.models import Conversation
-        from apps.offers.models import Offer
-        from apps.orders.models import Order
+    if viewer.role != Role.BRAND or not hasattr(viewer, "brand"):
+        return False
+    from apps.messaging.models import Conversation
+    from apps.messaging.services import has_relationship
 
-        if Bid.objects.filter(campaign__brand=brand, creator=creator).exists():
-            return True
-        if Order.objects.filter(brand=brand, creator=creator).exists():
-            return True
-        if Offer.objects.filter(brand=brand, creator=creator).exists():
-            return True
-        if Conversation.objects.filter(brand=brand, creator=creator).exists():
-            return True
-    return False
+    brand = viewer.brand
+    return has_relationship(brand, creator) or Conversation.objects.filter(brand=brand, creator=creator).exists()
 
 
 def get_public_creator(creator_id: Any, viewer: Any = None) -> Creator | None:
-    creator = _creator_detail_queryset().filter(pk=creator_id).first()
-    if creator is None:
-        return None
-    if can_view_creator(viewer, creator):
-        return creator
-    return None
+    active = CreatorPackage.objects.filter(active=True)
+    creator = (
+        _with_starting_price(Creator.objects.filter(pk=creator_id))
+        .prefetch_related(Prefetch("packages", queryset=active, to_attr="active_packages"), "media")
+        .first()
+    )
+    return creator if creator is not None and can_view_creator(viewer, creator) else None
