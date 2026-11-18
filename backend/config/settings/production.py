@@ -63,12 +63,12 @@ if RAZORPAY_ENABLED:  # noqa: F405
 # the Supabase pooler in Mumbai (~0.3 s from Singapore). A process-level pool keeps a few warm. Django already
 # disables prepared statements, which the transaction pooler requires. Size: 2 workers x 4 is well under
 # Supabase's pooler limit.
+DATABASES["default"]["OPTIONS"]["prepare_threshold"] = None
 DATABASES["default"]["OPTIONS"]["pool"] = {
     "min_size": 1,
     "max_size": env.int("DB_POOL_MAX_SIZE", default=4),
     "timeout": 10,
     "max_idle": 300,
-    "kwargs": {"prepare_threshold": None},
 }
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
