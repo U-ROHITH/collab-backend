@@ -1,5 +1,7 @@
+import logging
 import secrets
 from datetime import timedelta
+from typing import Any
 from uuid import UUID
 
 from django.db import transaction
@@ -16,6 +18,7 @@ from apps.core.exceptions import Conflict, NotFound
 from apps.identity.admin_account_serializers import (
     AdminAccountActionResult,
     AdminAccountUserOutput,
+    AdminPasswordResetInput,
     AdminPasswordResetResult,
     AdminReactivateAccountInput,
     AdminSessionOutput,
@@ -34,6 +37,8 @@ from apps.identity.models import (
 from apps.identity.permissions import RequireAdminRoles
 from apps.identity.services import _hash_code
 from apps.notifications.services import notify
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_user_id(user_id: UUID) -> UUID:
@@ -63,6 +68,7 @@ class AdminSuspendAccountView(APIView):
         input_serializer = AdminSuspendAccountInput(data=request.data)
         input_serializer.is_valid(raise_exception=True)
         reason = input_serializer.validated_data["reason"]
+        note = input_serializer.validated_data.get("note", "")
 
         with transaction.atomic():
             user = (
@@ -107,11 +113,15 @@ class AdminSuspendAccountView(APIView):
             from apps.core.public_cache import invalidate
             invalidate()
 
+            audit_detail = {"reason": reason, "role": user.role}
+            if note:
+                audit_detail["note"] = note
+
             audit = record_audit(
                 admin=request.user,
                 action="account.suspend",
                 target=user,
-                detail={"reason": reason, "role": user.role},
+                detail=audit_detail,
             )
 
             notify(
@@ -142,6 +152,7 @@ class AdminReactivateAccountView(APIView):
         input_serializer = AdminReactivateAccountInput(data=request.data)
         input_serializer.is_valid(raise_exception=True)
         reason = input_serializer.validated_data.get("reason", "")
+        note = input_serializer.validated_data.get("note", "")
 
         with transaction.atomic():
             user = User.objects.select_for_update(of=("self",)).filter(pk=user_id).first()
@@ -157,11 +168,15 @@ class AdminReactivateAccountView(APIView):
             from apps.core.public_cache import invalidate
             invalidate()
 
+            audit_detail = {"reason": reason, "role": user.role}
+            if note:
+                audit_detail["note"] = note
+
             audit = record_audit(
                 admin=request.user,
                 action="account.reactivate",
                 target=user,
-                detail={"reason": reason, "role": user.role},
+                detail=audit_detail,
             )
 
             notify(
@@ -186,12 +201,17 @@ class AdminPasswordResetView(APIView):
 
     permission_classes = [RequireAdminRoles(AdminRole.TRUST_SAFETY)]
 
-    @extend_schema(request=None, responses={200: AdminPasswordResetResult})
+    @extend_schema(request=AdminPasswordResetInput, responses={200: AdminPasswordResetResult})
     def post(self, request: Request, user_id: UUID) -> Response:
         user_id = _resolve_user_id(user_id)
         user = User.objects.filter(pk=user_id).first()
         if user is None:
             raise NotFound("User not found.")
+
+        input_serializer = AdminPasswordResetInput(data=request.data if request.data else {})
+        input_serializer.is_valid(raise_exception=True)
+        reason = input_serializer.validated_data.get("reason", "")
+        note = input_serializer.validated_data.get("note", "")
 
         destination = user.email or user.phone
         channel = OtpChannel.EMAIL if user.email else OtpChannel.SMS
@@ -215,11 +235,20 @@ class AdminPasswordResetView(APIView):
             challenge.code_hash = _hash_code(challenge.id, code)
             challenge.save()
 
+            audit_detail: dict[str, Any] = {
+                "destination": destination,
+                "expiresInMinutes": 30,
+            }
+            if reason:
+                audit_detail["reason"] = reason
+            if note:
+                audit_detail["note"] = note
+
             audit = record_audit(
                 admin=request.user,
                 action="account.password_reset",
                 target=user,
-                detail={"destination": destination, "expiresInMinutes": 30},
+                detail=audit_detail,
             )
 
             notify(
@@ -230,10 +259,28 @@ class AdminPasswordResetView(APIView):
                 data={"expiresInMinutes": 30},
             )
 
+            # Dispatch email or SMS if configured
+            if channel == OtpChannel.EMAIL and user.email:
+                from apps.identity.providers import send_email_otp
+
+                try:
+                    send_email_otp(user.email, code)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Failed to send password reset email to %s: %s", user.email, exc)
+            elif channel == OtpChannel.SMS and user.phone:
+                from apps.identity.providers import send_sms_otp
+
+                try:
+                    send_sms_otp(user.phone, code)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Failed to send password reset SMS to %s: %s", user.phone, exc)
+
             return Response(
                 {
-                    "message": "Password reset initiated successfully.",
+                    "sentTo": destination,
+                    "expiresAt": expires_at.isoformat(),
                     "expiresInMinutes": 30,
+                    "message": "Password reset initiated successfully.",
                     "audit": audit,
                 }
             )

@@ -14,25 +14,63 @@ from apps.notifications.models import Notification
 
 
 class AdminNotificationOutput(serializers.ModelSerializer):
+    kind = serializers.CharField(source="type")
+    read = serializers.SerializerMethodField()
     isRead = serializers.SerializerMethodField()  # noqa: N815
     readAt = serializers.DateTimeField(source="read_at", allow_null=True)  # noqa: N815
     createdAt = serializers.DateTimeField(source="created_at")  # noqa: N815
+    targetType = serializers.SerializerMethodField()  # noqa: N815
+    targetId = serializers.SerializerMethodField()  # noqa: N815
 
     class Meta:
         model = Notification
         fields = (
             "id",
             "type",
+            "kind",
             "title",
             "body",
             "data",
+            "read",
             "isRead",
             "readAt",
+            "targetType",
+            "targetId",
             "createdAt",
         )
 
+    def get_read(self, obj: Notification) -> bool:
+        return obj.read_at is not None
+
     def get_isRead(self, obj: Notification) -> bool:  # noqa: N802
         return obj.read_at is not None
+
+    def get_targetType(self, obj: Notification) -> str | None:  # noqa: N802
+        if isinstance(obj.data, dict):
+            if "targetType" in obj.data:
+                return str(obj.data["targetType"])
+            if "campaignId" in obj.data:
+                return "campaign"
+            if "orderId" in obj.data:
+                return "order"
+            if "ticketId" in obj.data:
+                return "ticket"
+            if "verificationId" in obj.data:
+                return "verification"
+            if "creatorId" in obj.data:
+                return "creator"
+            if "brandId" in obj.data:
+                return "brand"
+        return None
+
+    def get_targetId(self, obj: Notification) -> str | None:  # noqa: N802
+        if isinstance(obj.data, dict):
+            if "targetId" in obj.data:
+                return str(obj.data["targetId"])
+            for key in ("campaignId", "orderId", "ticketId", "verificationId", "creatorId", "brandId"):
+                if key in obj.data:
+                    return str(obj.data[key])
+        return None
 
 
 class AdminNotificationUnreadCountResult(serializers.Serializer):

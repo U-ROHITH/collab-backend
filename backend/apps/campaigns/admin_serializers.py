@@ -40,6 +40,7 @@ class AdminCampaignListOutput(serializers.ModelSerializer):
             "id",
             "title",
             "platform",
+            "status",
             "brand",
             "budgetMin",
             "budgetMax",
@@ -77,7 +78,6 @@ class AdminCampaignDetailOutput(AdminCampaignListOutput):
             "brief",
             "deliverables",
             "closesAt",
-            "status",
             "usageRights",
             "signals",
             "bidsSummary",
@@ -121,6 +121,7 @@ class AdminCampaignRejectInput(StrictSerializer):
 
 class AdminCampaignReasonInput(StrictSerializer):
     reason = serializers.CharField(min_length=4, max_length=500)
+    note = serializers.CharField(required=False, allow_blank=True, max_length=1000, default="")
 
 
 class AdminCampaignActionResult(serializers.Serializer):

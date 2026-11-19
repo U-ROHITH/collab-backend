@@ -394,3 +394,22 @@ def test_admin_verifications_permissions_and_role_checks(creator: APIClient) -> 
     # 5. Super admin -> 200 (hierarchy allows super_admin)
     sa_client, _ = _make_admin_client(role=AdminRole.SUPER_ADMIN)
     assert sa_client.get("/v1/admin/verifications/").status_code == 200
+
+
+def test_admin_verification_decisions_dispatch_outbound_email(creator: APIClient) -> None:
+    from django.core import mail
+
+    mail.outbox = []
+    admin_client, _ = _make_admin_client(role=AdminRole.TRUST_SAFETY)
+
+    creator.user.email = "creator_kyc_outbound@linkloom.test"
+    creator.user.save()
+    _populate_kyc(creator.user)
+    creator.post("/v1/kyc/submit/")
+    vr = VerificationRequest.objects.get(user=creator.user)
+
+    resp = admin_client.post(f"/v1/admin/verifications/{vr.id}/approve/")
+    assert resp.status_code == 200
+    assert len(mail.outbox) == 1
+    assert mail.outbox[0].to == ["creator_kyc_outbound@linkloom.test"]
+    assert "KYC" in mail.outbox[0].subject

@@ -195,6 +195,7 @@ class AdminOrderDetailOutput(AdminOrderListOutput):
 
 class AdminEscrowActionInput(StrictSerializer):
     reason = serializers.CharField(min_length=12, max_length=1000)
+    note = serializers.CharField(required=False, allow_blank=True, max_length=1000, default="")
     disputeId = serializers.UUIDField(required=False, allow_null=True)  # noqa: N815
 
 
@@ -296,6 +297,7 @@ class AdminDisputeDetailOutput(AdminDisputeListOutput):
 
 class AdminDisputeResolveInput(StrictSerializer):
     reason = serializers.CharField(min_length=4, max_length=1000)
+    note = serializers.CharField(required=False, allow_blank=True, max_length=1000, default="")
 
 
 class AdminDisputeResolveResult(serializers.Serializer):

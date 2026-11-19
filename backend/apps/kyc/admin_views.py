@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Callable
 from typing import Any
 from uuid import UUID
@@ -29,6 +30,54 @@ from apps.kyc.models import (
 )
 from apps.kyc.services import approval_side_effects
 from apps.notifications.services import notify
+
+logger = logging.getLogger(__name__)
+
+
+def _send_verification_email(to_email: str, subject: str, text: str) -> None:
+    if not to_email:
+        return
+    try:
+        from apps.identity.providers import _send_brevo, _send_resend
+
+        if _send_resend.enabled() and _send_resend(to_email, subject, text):  # type: ignore[attr-defined]
+            return
+        if _send_brevo.enabled() and _send_brevo(to_email, subject, text):  # type: ignore[attr-defined]
+            return
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("HTTP email provider unavailable: %s", exc)
+
+    try:
+        from django.conf import settings
+        from django.core import mail
+
+        mail.send_mail(subject, text, settings.DEFAULT_FROM_EMAIL, [to_email], fail_silently=True)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to send verification email to %s: %s", to_email, exc)
+
+
+def _send_verification_sms(phone: str, text: str) -> None:
+    if not phone:
+        return
+    try:
+        from apps.identity.providers import _console_mode
+
+        if _console_mode():
+            logger.warning("[DEV SMS] to %s: %s", phone, text)
+            return
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to send verification SMS to %s: %s", phone, exc)
+
+
+def _send_verification_outbound(user: Any, title: str, body: str) -> None:
+    if not user:
+        return
+    email = getattr(user, "email", None)
+    phone = getattr(user, "phone", None)
+    if email:
+        _send_verification_email(email, title, body)
+    if phone:
+        _send_verification_sms(phone, f"{title}: {body}")
 
 
 @extend_schema(tags=["Admin - Verifications"])
@@ -167,7 +216,11 @@ def _decide(
             target=f"verification:{vr.id}",
             detail={"user_id": str(vr.user_id), **audit_detail},
         )
-    notify(user_id=vr.user_id, data={"verificationId": str(vr.id), **notification.pop("data", {})}, **notification)
+    title = notification.get("title", "KYC Verification Update")
+    body = notification.get("body", "")
+    notif_data = {"verificationId": str(vr.id), **notification.pop("data", {})}
+    notify(user_id=vr.user_id, data=notif_data, **notification)
+    _send_verification_outbound(vr.user, title, body)
     return Response({"verification": AdminVerificationDetailOutput(vr).data, "audit": audit})
 
 

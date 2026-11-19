@@ -309,6 +309,7 @@ class AdminCampaignHideView(APIView):
         input_serializer = AdminCampaignReasonInput(data=request.data)
         input_serializer.is_valid(raise_exception=True)
         reason = input_serializer.validated_data["reason"]
+        note = input_serializer.validated_data.get("note", "")
 
         with transaction.atomic():
             campaign = (
@@ -350,7 +351,7 @@ class AdminCampaignHideView(APIView):
                 admin=request.user,
                 action="campaign.hide",
                 target=campaign,
-                detail={"brandId": str(campaign.brand_id), "reason": reason},
+                detail={"brandId": str(campaign.brand_id), "reason": reason, **({"note": note} if note else {})},
             )
 
             if campaign.brand.owner_id:
@@ -381,6 +382,7 @@ class AdminCampaignRemoveView(APIView):
         input_serializer = AdminCampaignReasonInput(data=request.data)
         input_serializer.is_valid(raise_exception=True)
         reason = input_serializer.validated_data["reason"]
+        note = input_serializer.validated_data.get("note", "")
 
         with transaction.atomic():
             campaign = (
@@ -435,7 +437,7 @@ class AdminCampaignRemoveView(APIView):
                 admin=request.user,
                 action="campaign.remove",
                 target=campaign,
-                detail={"brandId": str(campaign.brand_id), "reason": reason},
+                detail={"brandId": str(campaign.brand_id), "reason": reason, **({"note": note} if note else {})},
             )
 
             if campaign.brand.owner_id:
@@ -466,6 +468,7 @@ class AdminCampaignRestoreView(APIView):
         input_serializer = AdminCampaignReasonInput(data=request.data)
         input_serializer.is_valid(raise_exception=True)
         reason = input_serializer.validated_data["reason"]
+        note = input_serializer.validated_data.get("note", "")
 
         with transaction.atomic():
             campaign = (
@@ -507,7 +510,7 @@ class AdminCampaignRestoreView(APIView):
                 admin=request.user,
                 action="campaign.restore",
                 target=campaign,
-                detail={"brandId": str(campaign.brand_id), "reason": reason},
+                detail={"brandId": str(campaign.brand_id), "reason": reason, **({"note": note} if note else {})},
             )
 
             if campaign.brand.owner_id:

@@ -357,6 +357,7 @@ class AdminOrderForceReleaseView(APIView):
         inp = AdminEscrowActionInput(data=request.data)
         inp.is_valid(raise_exception=True)
         reason = inp.validated_data["reason"]
+        note = inp.validated_data.get("note", "")
         dispute_id = inp.validated_data.get("disputeId")
 
         with transaction.atomic():
@@ -447,6 +448,7 @@ class AdminOrderForceReleaseView(APIView):
                     "reason": reason,
                     "disputeId": str(dispute.id) if dispute else None,
                     "amountPaise": order.creator_payout_paise,
+                    **({"note": note} if note else {}),
                 },
             )
 
@@ -504,6 +506,7 @@ class AdminOrderRefundView(APIView):
         inp = AdminEscrowActionInput(data=request.data)
         inp.is_valid(raise_exception=True)
         reason = inp.validated_data["reason"]
+        note = inp.validated_data.get("note", "")
         dispute_id = inp.validated_data.get("disputeId")
 
         with transaction.atomic():
@@ -567,6 +570,7 @@ class AdminOrderRefundView(APIView):
                     "reason": reason,
                     "disputeId": str(dispute.id) if dispute else None,
                     "amountPaise": order.brand_total_paise,
+                    **({"note": note} if note else {}),
                 },
             )
 
@@ -688,6 +692,7 @@ class AdminDisputeResolveView(APIView):
         inp = AdminDisputeResolveInput(data=request.data)
         inp.is_valid(raise_exception=True)
         reason = inp.validated_data["reason"]
+        note = inp.validated_data.get("note", "")
 
         with transaction.atomic():
             dispute = (
@@ -724,16 +729,20 @@ class AdminDisputeResolveView(APIView):
                 "resolvedBy": str(request.user.id),
                 "reason": reason,
                 "restoredStatus": target_status,
+                **({"note": note} if note else {}),
             }
             dispute.save(
                 update_fields=["status", "resolution", "resolved_by", "resolved_at", "decision_metadata", "updated_at"]
             )
 
+            audit_detail = {"reason": reason, "orderId": str(order.id), "restoredStatus": target_status}
+            if note:
+                audit_detail["note"] = note
             audit = record_audit(
                 admin=request.user,
                 action="dispute.resolve",
                 target=dispute,
-                detail={"reason": reason, "orderId": str(order.id), "restoredStatus": target_status},
+                detail=audit_detail,
             )
 
             # Notify both parties

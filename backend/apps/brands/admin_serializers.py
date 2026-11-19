@@ -6,6 +6,7 @@ from rest_framework import serializers
 
 from apps.brands.models import Brand
 from apps.campaigns.models import Campaign, ModerationStatus
+from apps.identity.models import UserStatus
 
 
 class AdminBrandListOutput(serializers.ModelSerializer):
@@ -13,7 +14,9 @@ class AdminBrandListOutput(serializers.ModelSerializer):
     legalName = serializers.CharField(source="legal_name", allow_blank=True)  # noqa: N815
     logoUrl = serializers.CharField(source="logo_url", allow_null=True)  # noqa: N815
     regVerified = serializers.BooleanField(source="reg_verified")  # noqa: N815
+    status = serializers.SerializerMethodField()
     userStatus = serializers.SerializerMethodField()  # noqa: N815
+    suspension = serializers.SerializerMethodField()
     campaignsCount = serializers.SerializerMethodField()  # noqa: N815
     postingSpike = serializers.SerializerMethodField()  # noqa: N815
     reportsCount = serializers.SerializerMethodField()  # noqa: N815
@@ -31,15 +34,39 @@ class AdminBrandListOutput(serializers.ModelSerializer):
             "industry",
             "gstin",
             "regVerified",
+            "status",
             "userStatus",
+            "suspension",
             "campaignsCount",
             "postingSpike",
             "reportsCount",
             "createdAt",
         )
 
+    def get_status(self, obj: Brand) -> str:
+        return obj.owner.status if obj.owner else "active"
+
     def get_userStatus(self, obj: Brand) -> str:  # noqa: N802
         return obj.owner.status if obj.owner else "active"
+
+    def get_suspension(self, obj: Brand) -> dict[str, Any] | None:
+        if not obj.owner or obj.owner.status != UserStatus.SUSPENDED:
+            return None
+        from apps.identity.models import AuditLog
+
+        audit = (
+            AuditLog.objects.filter(entity_id=str(obj.owner_id), action="account.suspend")
+            .select_related("actor")
+            .order_by("-created_at")
+            .first()
+        )
+        if not audit:
+            return {"at": None, "by": "system", "reason": "Account suspended"}
+        return {
+            "at": audit.created_at.isoformat() if audit.created_at else None,
+            "by": audit.actor.email or audit.actor.phone if audit.actor else "system",
+            "reason": audit.metadata.get("reason", "") if isinstance(audit.metadata, dict) else "",
+        }
 
     def get_campaignsCount(self, obj: Brand) -> int:  # noqa: N802
         count = getattr(obj, "campaign_count", None)

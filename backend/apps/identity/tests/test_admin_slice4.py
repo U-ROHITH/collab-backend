@@ -2,6 +2,7 @@ import uuid
 from typing import Any
 
 import pytest
+from django.test import override_settings
 from rest_framework.test import APIClient
 
 from apps.campaigns.models import Bid, BidStatus, Campaign, ModerationStatus
@@ -479,3 +480,146 @@ def test_bid_alerts_flow(brand: APIClient, campaign_payload: dict[str, Any]) -> 
     )
     assert dismiss_resp.status_code == 200
     assert dismiss_resp.json()["data"]["alert"]["status"] == "dismissed"
+
+
+def test_admin_notifications_extended_fields(creator: APIClient) -> None:
+    admin_client, admin_user = _make_admin_client(role=AdminRole.SUPER_ADMIN)
+    notif = Notification.objects.create(
+        user=admin_user,
+        type="support_reply",
+        title="New Support Reply",
+        body="Admin replied to your ticket",
+        data={"ticketId": "11111111-1111-1111-1111-111111111111", "foo": "bar"},
+    )
+
+    resp = admin_client.get("/v1/admin/system/notifications/")
+    assert resp.status_code == 200
+    items = resp.json()["data"]
+    match = next((item for item in items if item["id"] == str(notif.id)), None)
+    assert match is not None
+    assert match["kind"] == "support_reply"
+    assert match["type"] == "support_reply"
+    assert match["read"] is False
+    assert match["isRead"] is False
+    assert match["targetType"] == "ticket"
+    assert match["targetId"] == "11111111-1111-1111-1111-111111111111"
+    assert match["title"] == "New Support Reply"
+    assert match["body"] == "Admin replied to your ticket"
+
+
+def test_admin_creator_and_brand_suspension_object(creator: APIClient, brand: APIClient) -> None:
+    admin_client, admin_user = _make_admin_client(role=AdminRole.TRUST_SAFETY)
+    cr = creator.user.creator  # type: ignore[attr-defined]
+    br = brand.user.brand  # type: ignore[attr-defined]
+
+    # Active creator detail
+    cr_resp = admin_client.get(f"/v1/admin/users/creators/{cr.id}/")
+    assert cr_resp.status_code == 200
+    cr_data = cr_resp.json()["data"]
+    assert cr_data["userId"] == str(creator.user.id)  # type: ignore[attr-defined]
+    assert cr_data["status"] == "active"
+    assert cr_data["suspension"] is None
+
+    # Suspend creator with reason and note
+    sus_resp = admin_client.post(
+        f"/v1/admin/users/{creator.user.id}/suspend/",  # type: ignore[attr-defined]
+        {"reason": "Spam behavior", "note": "Reported by multiple users"},
+        format="json",
+    )
+    assert sus_resp.status_code == 200
+
+    # Suspended creator detail reflects suspension object
+    cr_resp2 = admin_client.get(f"/v1/admin/users/creators/{cr.id}/")
+    assert cr_resp2.status_code == 200
+    cr_data2 = cr_resp2.json()["data"]
+    assert cr_data2["status"] == "suspended"
+    assert cr_data2["suspension"] is not None
+    assert cr_data2["suspension"]["reason"] == "Spam behavior"
+    assert cr_data2["suspension"]["by"] == admin_user.email
+    assert cr_data2["suspension"]["at"] is not None
+
+    # Suspended creator in list endpoint
+    cr_list = admin_client.get("/v1/admin/users/creators/?status=suspended")
+    assert cr_list.status_code == 200
+    cr_item = next(item for item in cr_list.json()["data"] if item["id"] == str(cr.id))
+    assert cr_item["userId"] == str(creator.user.id)  # type: ignore[attr-defined]
+    assert cr_item["status"] == "suspended"
+    assert cr_item["suspension"]["reason"] == "Spam behavior"
+
+    # Suspend brand
+    b_sus = admin_client.post(
+        f"/v1/admin/users/{brand.user.id}/suspend/",  # type: ignore[attr-defined]
+        {"reason": "Payment dispute", "note": "Chargeback triggered"},
+        format="json",
+    )
+    assert b_sus.status_code == 200
+
+    br_resp = admin_client.get(f"/v1/admin/users/brands/{br.id}/")
+    assert br_resp.status_code == 200
+    br_data = br_resp.json()["data"]
+    assert br_data["userId"] == str(brand.user.id)  # type: ignore[attr-defined]
+    assert br_data["status"] == "suspended"
+    assert br_data["suspension"] is not None
+    assert br_data["suspension"]["reason"] == "Payment dispute"
+    assert br_data["suspension"]["by"] == admin_user.email
+
+
+def test_admin_password_reset_accepts_reason_and_note(creator: APIClient) -> None:
+    admin_client, _ = _make_admin_client(role=AdminRole.TRUST_SAFETY)
+    creator_user = creator.user  # type: ignore[attr-defined]
+    creator_user.email = "creator_reset_test@linkloom.test"
+    creator_user.save()
+
+    resp = admin_client.post(
+        f"/v1/admin/users/{creator_user.id}/password-reset/",
+        {"reason": "Account recovery requested", "note": "Verified phone call"},
+        format="json",
+    )
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["sentTo"] == "creator_reset_test@linkloom.test"
+    assert data["expiresInMinutes"] == 30
+    assert "expiresAt" in data
+    assert data["audit"]["id"]
+    assert data["audit"]["hash"]
+
+    from apps.identity.models import AuditLog
+
+    log = AuditLog.objects.filter(entity_id=str(creator_user.id), action="account.password_reset").first()
+    assert log is not None
+    assert log.detail["reason"] == "Account recovery requested"
+    assert log.detail["note"] == "Verified phone call"
+
+
+@override_settings(CAMPAIGN_MODERATION_ENFORCED=True)
+def test_admin_campaign_list_output_status_and_note(brand: APIClient, campaign_payload: dict[str, Any]) -> None:
+    admin_client, _ = _make_admin_client(role=AdminRole.TRUST_SAFETY)
+    c_resp = brand.post("/v1/campaigns/", campaign_payload, format="json")
+    assert c_resp.status_code == 201
+    camp_id = c_resp.json()["data"]["id"]
+
+    # Admin campaign list includes status
+    list_resp = admin_client.get("/v1/admin/campaigns/")
+    assert list_resp.status_code == 200
+    item = next(item for item in list_resp.json()["data"] if item["id"] == camp_id)
+    assert "status" in item
+    assert item["status"] == "open"
+
+    # Approve campaign
+    app_resp = admin_client.post(f"/v1/admin/campaigns/{camp_id}/approve/")
+    assert app_resp.status_code == 200
+
+    # Hide campaign with note
+    hide_resp = admin_client.post(
+        f"/v1/admin/campaigns/{camp_id}/hide/",
+        {"reason": "Temporary investigation", "note": "Internal ticket LL-42"},
+        format="json",
+    )
+    assert hide_resp.status_code == 200
+    assert hide_resp.json()["data"]["campaign"]["status"] == "open"
+
+    from apps.identity.models import AuditLog
+
+    hide_log = AuditLog.objects.filter(entity_id=camp_id, action="campaign.hide").first()
+    assert hide_log is not None
+    assert hide_log.detail["note"] == "Internal ticket LL-42"

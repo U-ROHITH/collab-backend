@@ -4,6 +4,7 @@ from rest_framework import serializers
 
 from apps.core.serializers import StrictSerializer
 from apps.creators.models import Category, Creator
+from apps.identity.models import UserStatus
 from apps.kyc.admin_serializers import AdminAuditOutput
 
 
@@ -47,7 +48,9 @@ class AdminCreatorListOutput(serializers.ModelSerializer):
     approvalStatus = serializers.CharField(source="approval_status")  # noqa: N815
     featuredOrder = serializers.IntegerField(source="featured_order")  # noqa: N815
     rating = serializers.FloatField(read_only=True)
+    status = serializers.SerializerMethodField()
     userStatus = serializers.SerializerMethodField()  # noqa: N815
+    suspension = serializers.SerializerMethodField()
     kycStatus = serializers.SerializerMethodField()  # noqa: N815
     reportsCount = serializers.SerializerMethodField()  # noqa: N815
     createdAt = serializers.DateTimeField(source="created_at")  # noqa: N815
@@ -67,14 +70,38 @@ class AdminCreatorListOutput(serializers.ModelSerializer):
             "featuredOrder",
             "tags",
             "rating",
+            "status",
             "userStatus",
+            "suspension",
             "kycStatus",
             "reportsCount",
             "createdAt",
         )
 
+    def get_status(self, obj: Creator) -> str:
+        return obj.user.status if obj.user else "active"
+
     def get_userStatus(self, obj: Creator) -> str:  # noqa: N802
         return obj.user.status if obj.user else "active"
+
+    def get_suspension(self, obj: Creator) -> dict[str, Any] | None:
+        if not obj.user or obj.user.status != UserStatus.SUSPENDED:
+            return None
+        from apps.identity.models import AuditLog
+
+        audit = (
+            AuditLog.objects.filter(entity_id=str(obj.user_id), action="account.suspend")
+            .select_related("actor")
+            .order_by("-created_at")
+            .first()
+        )
+        if not audit:
+            return {"at": None, "by": "system", "reason": "Account suspended"}
+        return {
+            "at": audit.created_at.isoformat() if audit.created_at else None,
+            "by": audit.actor.email or audit.actor.phone if audit.actor else "system",
+            "reason": audit.metadata.get("reason", "") if isinstance(audit.metadata, dict) else "",
+        }
 
     def get_kycStatus(self, obj: Creator) -> str:  # noqa: N802
         if not obj.user:
