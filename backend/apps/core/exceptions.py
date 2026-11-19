@@ -19,12 +19,19 @@ class DomainError(Exception):
     code = "BUSINESS_RULE_VIOLATION"
     message = "The request could not be completed."
 
-    def __init__(self, message: str | None = None, *, code: str | None = None) -> None:
+    def __init__(self, message: str | None = None, *, code: str | None = None, details: Any = None) -> None:
         super().__init__(message or self.message)
         if message:
             self.message = message
         if code:
             self.code = code
+        self.details = details
+
+
+class BadRequest(DomainError):
+    status_code = 400
+    code = "BAD_REQUEST"
+    message = "Bad request."
 
 
 class NotFound(DomainError):
@@ -76,7 +83,8 @@ def envelope_exception_handler(exc: Exception, context: dict[str, Any]) -> Respo
     request_id = getattr(request, "request_id", None) if request else None
 
     if isinstance(exc, DomainError):
-        return Response(_envelope(exc.code, exc.message, request_id), status=exc.status_code)
+        details = getattr(exc, "details", None)
+        return Response(_envelope(exc.code, exc.message, request_id, details=details), status=exc.status_code)
 
     if isinstance(exc, Http404):
         exc = drf_exc.NotFound()

@@ -156,11 +156,9 @@ class CheckoutView(APIView):
 
 
 class BrandPublicProfileView(APIView):
-    """A brand's public profile (name, logo, industry, website, city).
+    """A brand's public profile (name, logo, industry, website, city, location, about, openBriefs, pitch status).
 
-    Creators can see it once they have an offer, order or conversation with that brand. Open
-    campaigns stay anonymous (blind bidding), so a bid alone doesn't reveal the brand.
-    Brands can view their own.
+    Creators can view non-suspended brand profiles. Suspended brands return 404. Brands can view their own.
     """
 
     permission_classes = [IsBrandOrCreator]
@@ -175,11 +173,65 @@ class BrandPublicProfileView(APIView):
                 "industry": serializers.CharField(),
                 "website": serializers.URLField(allow_null=True),
                 "city": serializers.CharField(),
+                "location": serializers.CharField(),
+                "about": serializers.CharField(),
+                "openBriefs": serializers.ListField(child=serializers.DictField()),
+                "canPitch": serializers.BooleanField(),
+                "pitchBlockedUntil": serializers.CharField(allow_null=True),
+                "myPitch": serializers.DictField(allow_null=True),
             },
         )
     )
     def get(self, request: Request, brand_id: UUID) -> Response:
-        brand = Brand.objects.filter(pk=brand_id).first()
-        if brand is None or not services.can_view_brand(request.user, brand):
+        from django.utils import timezone
+
+        from apps.campaigns.models import Campaign, CampaignStatus, ModerationStatus
+        from apps.creators.serializers import money
+        from apps.identity.models import UserStatus
+        from apps.pitches.serializers import PitchOutput
+        from apps.pitches.services import pitch_status_for_creator
+
+        brand = Brand.objects.select_related("owner").filter(pk=brand_id).first()
+        if (
+            brand is None
+            or brand.owner.status == UserStatus.SUSPENDED
+            or not services.can_view_brand(request.user, brand)
+        ):
             raise NotFound()
-        return Response(brand_public(brand))
+
+        data = brand_public(brand)
+        data["location"] = data.get("city") or ""
+        data["about"] = brand.industry or ""
+
+        open_campaigns = Campaign.objects.filter(
+            brand=brand,
+            status=CampaignStatus.OPEN,
+            moderation_status=ModerationStatus.LIVE,
+            closes_at__gt=timezone.now(),
+        ).order_by("-created_at")
+        data["openBriefs"] = [
+            {
+                "id": str(c.id),
+                "title": c.title,
+                "platform": c.platform,
+                "deliverables": c.deliverables,
+                "budgetMin": money(c.budget_min_paise),
+                "budgetMax": money(c.budget_max_paise),
+                "closesAt": c.closes_at.date().isoformat() if hasattr(c.closes_at, "date") else str(c.closes_at),
+                "status": c.status,
+            }
+            for c in open_campaigns
+        ]
+
+        creator = getattr(request.user, "creator", None)
+        if creator:
+            p_status = pitch_status_for_creator(creator.id, brand.id)
+            data["canPitch"] = p_status["canPitch"]
+            data["pitchBlockedUntil"] = p_status["pitchBlockedUntil"]
+            data["myPitch"] = PitchOutput(p_status["myPitch"]).data if p_status["myPitch"] else None
+        else:
+            data["canPitch"] = False
+            data["pitchBlockedUntil"] = None
+            data["myPitch"] = None
+
+        return Response(data)

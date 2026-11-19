@@ -173,19 +173,18 @@ def checkout_cart(*, brand: Brand, actor: User, usage_rights: dict[str, Any]) ->
 
 
 def can_view_brand(user: User, brand: Brand) -> bool:
-    """Creators see a brand once there's an offer, order or conversation between them (not via bids)."""
-    from apps.identity.models import Role
-    from apps.messaging.models import Conversation
-    from apps.offers.models import Offer
-    from apps.orders.models import Order
+    """Creators see non-suspended brand profiles. Suspended brands return False (404). Brands see their own."""
+    from apps.identity.models import Role, UserStatus
+
+    owner = getattr(brand, "owner", None)
+    if owner and owner.status == UserStatus.SUSPENDED:
+        return False
 
     if user.role == Role.BRAND:
         return brand.owner_id == user.pk
     creator = getattr(user, "creator", None)
-    if creator is None:
-        return False
-    return (
-        Order.objects.filter(brand=brand, creator=creator).exists()
-        or Offer.objects.filter(brand=brand, creator=creator).exists()
-        or Conversation.objects.filter(brand=brand, creator=creator).exists()
-    )
+    if creator is not None or user.role == Role.CREATOR:
+        return True
+    if getattr(user, "is_staff", False) or getattr(user, "role", None) == Role.ADMIN:
+        return True
+    return False

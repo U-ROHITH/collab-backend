@@ -46,7 +46,9 @@ def _public_bucket() -> str:
     return settings.STORAGE_PUBLIC_BUCKET
 
 
-def create_upload(*, user: User, kind: str, content_type: str, size: int) -> tuple[Upload, str]:
+def create_upload(
+    *, user: User, kind: str, content_type: str, size: int, original_filename: str = ""
+) -> tuple[Upload, str]:
     rule = RULES[kind]
     if rule.role and user.role != rule.role:
         raise DomainError("This upload type isn't available for your account.", code="UPLOAD_KIND_NOT_ALLOWED")
@@ -84,6 +86,7 @@ def create_upload(*, user: User, kind: str, content_type: str, size: int) -> tup
         declared_content_type=content_type,
         declared_size=size,
         staging_key=staging_key,
+        original_filename=original_filename,
     )
     return upload, url
 

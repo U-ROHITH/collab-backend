@@ -1,9 +1,19 @@
+import re
 from typing import Any
 
 from rest_framework import serializers
 
 from apps.core.serializers import StrictSerializer
 from apps.uploads.models import Upload, UploadKind
+
+# Characters that must not appear in a stored filename.
+_UNSAFE_RE = re.compile(r"[/\\<>:\"|?*\x00-\x1f]")
+
+
+def _sanitise_filename(raw: str) -> str:
+    """Strip path separators and control characters; trim to 255 chars."""
+    name = _UNSAFE_RE.sub("", raw).strip()
+    return name[:255]
 
 
 class UploadCreateInput(StrictSerializer):
@@ -28,6 +38,10 @@ class UploadCreateInput(StrictSerializer):
         if not size:
             raise serializers.ValidationError({"size": ["This field is required."]})
         attrs["size"] = size
+
+        # Normalise whichever filename alias the client sent; store a clean value.
+        raw_name = attrs.get("filename") or attrs.get("fileName") or attrs.get("name") or ""
+        attrs["originalFilename"] = _sanitise_filename(raw_name)
         return attrs
 
 
@@ -35,10 +49,11 @@ class UploadOutput(serializers.ModelSerializer):
     contentType = serializers.SerializerMethodField()  # noqa: N815
     size = serializers.SerializerMethodField()
     url = serializers.SerializerMethodField()
+    fileName = serializers.SerializerMethodField()  # noqa: N815
 
     class Meta:
         model = Upload
-        fields = ("id", "kind", "status", "contentType", "size", "url")
+        fields = ("id", "kind", "status", "contentType", "size", "url", "fileName")
 
     def get_contentType(self, obj: Upload) -> str:  # noqa: N802
         return obj.content_type or obj.declared_content_type
@@ -48,6 +63,9 @@ class UploadOutput(serializers.ModelSerializer):
 
     def get_url(self, obj: Upload) -> str | None:
         return obj.public_url or None  # private files: use the download-url endpoint
+
+    def get_fileName(self, obj: Upload) -> str | None:  # noqa: N802
+        return obj.original_filename or None
 
 
 class UploadCreatedOutput(serializers.Serializer):

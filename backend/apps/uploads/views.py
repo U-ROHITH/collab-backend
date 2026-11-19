@@ -23,7 +23,11 @@ class UploadCreateView(APIView):
         data.is_valid(raise_exception=True)
         v = data.validated_data
         upload, url = services.create_upload(
-            user=request.user, kind=v["kind"], content_type=v["contentType"], size=v["size"]
+            user=request.user,
+            kind=v["kind"],
+            content_type=v["contentType"],
+            size=v["size"],
+            original_filename=v.get("originalFilename", ""),
         )
         return Response(
             {

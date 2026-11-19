@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     "apps.realtime",
     "apps.money",
     "apps.moderation",
+    "apps.pitches",
 ]
 
 MIDDLEWARE = [
@@ -302,6 +303,8 @@ ORDER_POLICY = {
     "payment_window_hours": 48,
     "auto_approve_hours": 72,
 }
+
+PITCH_DECLINE_COOLDOWN_DAYS = int(env.int("PITCH_DECLINE_COOLDOWN_DAYS", default=15))
 
 # --- Razorpay / payments ----------------------------------------------------------------------
 RAZORPAY_KEY_ID = env("RAZORPAY_KEY_ID", default="rzp_test_collabmarketplace")

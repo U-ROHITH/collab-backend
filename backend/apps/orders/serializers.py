@@ -109,7 +109,12 @@ class DeliverableOutput(serializers.ModelSerializer):
         if u is None:
             return None
         # Private file: fetch a short-lived link from GET /v1/uploads/{uploadId}/download-url/
-        return {"uploadId": str(u.id), "contentType": u.content_type, "size": u.size_bytes}
+        return {
+            "uploadId": str(u.id),
+            "fileName": u.original_filename or None,
+            "contentType": u.content_type,
+            "size": u.size_bytes,
+        }
 
 
 class DeliverableInput(StrictSerializer):

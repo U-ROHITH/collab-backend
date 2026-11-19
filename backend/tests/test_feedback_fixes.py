@@ -48,7 +48,8 @@ def test_bid_alone_does_not_reveal_brand_profile(brand: Any, creator: Any, campa
         ),
         201,
     )
-    assert creator.get(f"/v1/brands/{brand.user.brand.id}/").status_code == 404
+    # Creators can view non-suspended brand profiles (to pitch or inspect open briefs)
+    assert creator.get(f"/v1/brands/{brand.user.brand.id}/").status_code == 200
 
 
 # --- 2. Date only (no time) on campaigns, bids and offers ----------------------------------
@@ -141,7 +142,7 @@ def test_brand_profile_endpoint(brand: Any, creator: Any, make_creator: Any, mak
     prof = ok(creator.get(f"/v1/brands/{bid}/"))
     assert prof["name"] == "Nimbu Foods" and prof["industry"] == "Food & Beverage"
     assert not PRIVATE_KEYS & set(prof)
-    assert make_creator("Stranger").get(f"/v1/brands/{bid}/").status_code == 404
+    assert ok(make_creator("Stranger").get(f"/v1/brands/{bid}/"))["id"] == str(bid)
     assert ok(brand.get(f"/v1/brands/{bid}/"))["id"] == str(bid)
     assert make_brand("Rival").get(f"/v1/brands/{bid}/").status_code == 404
 

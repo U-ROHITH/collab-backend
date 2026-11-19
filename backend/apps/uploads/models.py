@@ -66,6 +66,7 @@ class Upload(BaseModel):
     content_type = models.CharField(max_length=60, blank=True)
     size_bytes = models.PositiveIntegerField(null=True, blank=True)
     public_url = models.URLField(max_length=600, blank=True)
+    original_filename = models.CharField(max_length=255, blank=True, default="")  # sanitised, client-supplied
 
     class Meta:
         constraints = [

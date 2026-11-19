@@ -23,31 +23,6 @@ class AdminCampaignBrandOutput(serializers.Serializer):
     logoUrl = serializers.CharField(source="logo_url", allow_null=True)  # noqa: N815
 
 
-class AdminCampaignSignalOutput(serializers.Serializer):
-    key = serializers.CharField()
-    label = serializers.CharField()
-    result = serializers.ChoiceField(choices=["pass", "warn", "fail"])
-    text = serializers.CharField()
-    blocking = serializers.BooleanField(default=False)
-
-
-class AdminCampaignBidsSummaryOutput(serializers.Serializer):
-    total = serializers.IntegerField()
-    pending = serializers.IntegerField()
-    held = serializers.IntegerField()
-    selected = serializers.IntegerField()
-    rejected = serializers.IntegerField()
-
-
-class AdminCampaignModerationDetailOutput(serializers.Serializer):
-    status = serializers.CharField()
-    reason = serializers.CharField(allow_null=True)
-    ruleBroken = serializers.CharField(allow_null=True)  # noqa: N815
-    changedFields = serializers.ListField(child=serializers.CharField())  # noqa: N815
-    moderatedAt = serializers.DateTimeField(allow_null=True)  # noqa: N815
-    moderatedBy = serializers.CharField(allow_null=True)  # noqa: N815
-
-
 class AdminCampaignListOutput(serializers.ModelSerializer):
     brand = AdminCampaignListBrandOutput()
     budgetMin = serializers.SerializerMethodField()  # noqa: N815

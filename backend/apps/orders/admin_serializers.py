@@ -47,13 +47,6 @@ class AdminReviewActionResult(serializers.Serializer):
     audit = AdminAuditOutput()
 
 
-class AdminOrderPartyOutput(serializers.Serializer):
-    id = serializers.UUIDField()
-    name = serializers.CharField()
-    email = serializers.CharField(required=False, allow_blank=True, default="")
-    avatarUrl = serializers.CharField(required=False, allow_null=True)  # noqa: N815
-
-
 class AdminOrderListOutput(serializers.ModelSerializer):
     brand = serializers.SerializerMethodField()
     creator = serializers.SerializerMethodField()
@@ -125,14 +118,6 @@ class AdminOrderPipelineOutput(serializers.Serializer):
     pipeline = AdminOrderPipelineItem(many=True)
     heldTotal = serializers.IntegerField()  # noqa: N815
     disputedTotal = serializers.IntegerField()  # noqa: N815
-
-
-class AdminOrderFinancialBreakdown(serializers.Serializer):
-    price = serializers.IntegerField()
-    commission = serializers.IntegerField()
-    gateway = serializers.IntegerField()
-    creatorGets = serializers.IntegerField()  # noqa: N815
-    linkloomNet = serializers.IntegerField()  # noqa: N815
 
 
 class AdminOrderDetailOutput(AdminOrderListOutput):

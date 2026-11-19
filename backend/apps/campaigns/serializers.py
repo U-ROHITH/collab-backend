@@ -12,12 +12,6 @@ from apps.creators.serializers import money
 from apps.identity.models import Role
 
 
-class CampaignModerationOutput(serializers.Serializer):
-    status = serializers.CharField()
-    reason = serializers.CharField(allow_null=True)
-    changedFields = serializers.ListField(child=serializers.CharField(), default=list)  # noqa: N815
-
-
 class CampaignOutput(serializers.ModelSerializer):
     """Campaign serializer for creators, brands, and public listing.
     With context["guest"] (signed-out, mid-signup, unapproved creator) `brief` and `usageRights` are null."""
