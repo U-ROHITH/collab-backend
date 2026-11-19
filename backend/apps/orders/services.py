@@ -223,9 +223,7 @@ def respond_to_dispute(
         dispute.counterparty_statement = statement
         dispute.counterparty_statement_at = timezone.now()
         dispute.counterparty_upload_ids = [str(u) for u in (evidence_upload_ids or [])]
-        dispute.save(
-            update_fields=["counterparty_statement", "counterparty_statement_at", "counterparty_upload_ids"]
-        )
+        dispute.save(update_fields=["counterparty_statement", "counterparty_statement_at", "counterparty_upload_ids"])
 
         # Notify dispute opener
         notify(
@@ -252,6 +250,9 @@ def system_event(*, order_id: UUID, event: str, reason: str = "") -> Order:
     with transaction.atomic():
         order = _apply(order_id, actor=None, role=state_machine.SYSTEM, event=event, reason=reason)
         if event == "fund":
+            from apps.messaging.models import Conversation
+
+            Conversation.objects.get_or_create(brand=order.brand, creator=order.creator)
             for uid in _parties(order):
                 notify(
                     user_id=uid,

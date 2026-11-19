@@ -24,3 +24,7 @@ if _test_db_host not in ("localhost", "127.0.0.1", "postgres", ""):
 DATA_ENCRYPTION_KEY = "test-only-encryption-key-not-a-secret"
 CAMPAIGN_MODERATION_ENFORCED = False
 
+RAZORPAY_KEY_ID = "rzp_test_collabmarketplace"
+RAZORPAY_KEY_SECRET = "test_secret_collab"
+RAZORPAY_WEBHOOK_SECRET = "test_webhook_secret"
+

@@ -25,10 +25,12 @@ class CheckoutSessionOutput(serializers.Serializer):
     sessionId = serializers.UUIDField()  # noqa: N815
     gateway = serializers.CharField()
     orderId = serializers.CharField()  # noqa: N815
+    razorpayOrderId = serializers.CharField(required=False)  # noqa: N815
     amount = serializers.DictField()
     amountPaise = serializers.IntegerField()  # noqa: N815
     currency = serializers.CharField()
     key = serializers.CharField()
+    keyId = serializers.CharField(required=False)  # noqa: N815
     brand = serializers.DictField()
     orders = serializers.ListField(child=serializers.CharField())
 

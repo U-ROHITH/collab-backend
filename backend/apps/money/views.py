@@ -45,15 +45,18 @@ class CheckoutView(APIView):
             usage_rights=validated.get("usageRights"),
         )
 
+        key = getattr(settings, "RAZORPAY_KEY_ID", "rzp_test_collabmarketplace")
         return Response(
             {
                 "sessionId": str(session.id),
                 "gateway": "razorpay",
                 "orderId": session.gateway_order_id,
+                "razorpayOrderId": session.gateway_order_id,
                 "amount": money(session.amount_paise),
                 "amountPaise": session.amount_paise,
                 "currency": session.currency,
-                "key": getattr(settings, "RAZORPAY_KEY_ID", "rzp_test_collabmarketplace"),
+                "key": key,
+                "keyId": key,
                 "brand": {
                     "name": brand.name,
                     "email": getattr(brand.owner, "email", ""),
@@ -62,6 +65,63 @@ class CheckoutView(APIView):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+def _handle_webhook(raw_body: bytes, signature: str, validated: dict) -> Response:
+    check_webhook_signature(raw_body=raw_body, signature=signature)
+    event = validated.get("event", "")
+    if event == "payment.captured":
+        entity = (validated.get("payload") or {}).get("payment", {}).get("entity", {})
+        gateway_order_id = entity.get("order_id") or ""
+        payment_id = entity.get("id") or ""
+        if not gateway_order_id or not payment_id:
+            raise NotFound("Missing orderId or paymentId for verification.")
+        receipt = services.verify_payment(
+            gateway_order_id=gateway_order_id,
+            payment_id=payment_id,
+            signature=signature,
+            brand=None,
+            metadata=validated.get("payload"),
+        )
+        return Response(PaymentReceiptOutput(receipt).data)
+    elif event == "payment.failed":
+        entity = (validated.get("payload") or {}).get("payment", {}).get("entity", {})
+        gateway_order_id = entity.get("order_id") or ""
+        payment_id = entity.get("id") or ""
+        services.handle_payment_failed(
+            gateway_order_id=gateway_order_id,
+            payment_id=payment_id,
+            payload=entity,
+        )
+        return Response({"received": True, "event": "payment.failed"})
+    elif event == "refund.processed":
+        payload = validated.get("payload") or {}
+        refund_entity = payload.get("refund", {}).get("entity", {})
+        payment_entity = payload.get("payment", {}).get("entity", {})
+        refund_id = refund_entity.get("id") or ""
+        payment_id = refund_entity.get("payment_id") or payment_entity.get("id") or ""
+        services.handle_refund_processed(
+            refund_id=refund_id,
+            payment_id=payment_id,
+            payload=payload,
+        )
+        return Response({"received": True, "event": "refund.processed"})
+    else:
+        return Response({"received": True, "ignored": True})
+
+
+class PaymentWebhookView(APIView):
+    """Dedicated endpoint for Razorpay webhooks."""
+
+    permission_classes = [AllowAny]
+    throttle_scope = "writes"
+
+    def post(self, request: Request) -> Response:
+        raw_body = request._request.body
+        webhook_signature = request.headers.get("X-Razorpay-Signature", "")
+        data = PaymentVerifyInput(data=request.data)
+        data.is_valid(raise_exception=True)
+        return _handle_webhook(raw_body=raw_body, signature=webhook_signature, validated=data.validated_data)
 
 
 class PaymentVerifyView(APIView):
@@ -81,23 +141,16 @@ class PaymentVerifyView(APIView):
         data.is_valid(raise_exception=True)
         validated = data.validated_data
 
-        brand = None
         if webhook_signature or validated.get("event"):
-            check_webhook_signature(raw_body=raw_body, signature=webhook_signature)
-            if validated.get("event") != "payment.captured":
-                return Response({"ignored": True})
-            entity = (validated.get("payload") or {}).get("payment", {}).get("entity", {})
-            gateway_order_id = entity.get("order_id") or ""
-            payment_id = entity.get("id") or ""
-            signature = webhook_signature
-        else:
-            brand = getattr(request.user, "brand", None) if getattr(request.user, "is_authenticated", False) else None
-            if brand is None:
-                raise Forbidden("Sign in as the paying brand to confirm a payment.")
-            gateway_order_id = validated.get("razorpayOrderId") or validated.get("orderId") or ""
-            payment_id = validated.get("razorpayPaymentId") or validated.get("paymentId") or ""
-            signature = validated.get("razorpaySignature") or validated.get("signature") or ""
-            check_checkout_signature(razorpay_order_id=gateway_order_id, payment_id=payment_id, signature=signature)
+            return _handle_webhook(raw_body=raw_body, signature=webhook_signature, validated=validated)
+
+        brand = getattr(request.user, "brand", None) if getattr(request.user, "is_authenticated", False) else None
+        if brand is None:
+            raise Forbidden("Sign in as the paying brand to confirm a payment.")
+        gateway_order_id = validated.get("razorpayOrderId") or validated.get("orderId") or ""
+        payment_id = validated.get("razorpayPaymentId") or validated.get("paymentId") or ""
+        signature = validated.get("razorpaySignature") or validated.get("signature") or ""
+        check_checkout_signature(razorpay_order_id=gateway_order_id, payment_id=payment_id, signature=signature)
 
         if not gateway_order_id or not payment_id:
             raise NotFound("Missing orderId or paymentId for verification.")

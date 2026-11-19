@@ -5,6 +5,7 @@ import uuid
 from typing import Any
 from uuid import UUID
 
+import requests
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Sum
@@ -14,7 +15,7 @@ from apps.brands.models import Brand, CartItem
 from apps.brands.services import checkout_cart
 from apps.core.exceptions import Conflict, DomainError, NotFound
 from apps.creators.models import Creator, CreatorPackage
-from apps.identity.models import User
+from apps.identity.models import User, UserStatus
 from apps.money.models import (
     CreatorWallet,
     PaymentReceipt,
@@ -22,6 +23,7 @@ from apps.money.models import (
     WalletTransaction,
     WithdrawalRequest,
 )
+from apps.money.signatures import are_payments_configured
 from apps.notifications.services import notify
 from apps.orders import services as order_services
 from apps.orders.models import Order, OrderStatus
@@ -29,6 +31,41 @@ from apps.orders.models import Order, OrderStatus
 logger = logging.getLogger(__name__)
 
 UPI_REGEX = r"^[\w\.\-_]{2,256}@[a-zA-Z]{2,64}$"
+
+
+def create_razorpay_order(*, amount_paise: int, receipt_id: str, order_id: str) -> str:
+    """Create order in Razorpay if live keys are configured, otherwise return mock ID."""
+    if not are_payments_configured():
+        return f"order_rzp_{uuid.uuid4().hex[:16]}"
+
+    key_id = getattr(settings, "RAZORPAY_KEY_ID", "")
+    key_secret = getattr(settings, "RAZORPAY_KEY_SECRET", "")
+    payload = {
+        "amount": amount_paise,
+        "currency": "INR",
+        "receipt": receipt_id[:40],
+        "notes": {"linkloomOrderId": order_id},
+    }
+    try:
+        resp = requests.post(
+            "https://api.razorpay.com/v1/orders",
+            auth=(key_id, key_secret),
+            json=payload,
+            timeout=10,
+        )
+    except Exception as exc:
+        logger.error("Failed to connect to Razorpay: %s", exc)
+        raise DomainError("Unable to reach payment gateway.", code="PAYMENT_GATEWAY_ERROR") from exc
+
+    if resp.status_code not in (200, 201):
+        logger.error("Razorpay order creation failed: %s %s", resp.status_code, resp.text)
+        raise DomainError("Payment gateway order creation failed.", code="PAYMENT_GATEWAY_ERROR")
+
+    data = resp.json()
+    rzp_id = data.get("id")
+    if not rzp_id:
+        raise DomainError("Payment gateway did not return an order ID.", code="PAYMENT_GATEWAY_ERROR")
+    return rzp_id
 
 
 @transaction.atomic
@@ -52,7 +89,15 @@ def initiate_checkout(
         except Order.DoesNotExist:
             raise NotFound("Order not found.") from None
         if order.status != OrderStatus.AWAITING_PAYMENT:
-            raise Conflict("Order is already funded or processed.", code="ORDER_ALREADY_PAID")
+            raise Conflict("Order is already funded or processed.", code="ORDER_NOT_PAYABLE")
+
+        # Guard: check creator status
+        creator = order.creator
+        creator_user = getattr(creator, "user", None)
+        is_active_creator = creator_user is None or creator_user.status == UserStatus.ACTIVE
+        if not creator.is_approved or not is_active_creator:
+            raise Conflict("This creator is no longer available.", code="PACKAGE_UNAVAILABLE")
+
         # Paying the same order twice must not be possible: reuse its open session.
         open_session = PaymentSession.objects.filter(order=order, status="created").first()
         if open_session is not None:
@@ -97,11 +142,24 @@ def initiate_checkout(
             )
             if pending_orders:
                 orders = pending_orders
+                creator = orders[0].creator
+                creator_user = getattr(creator, "user", None)
+                is_active_creator = creator_user is None or creator_user.status == UserStatus.ACTIVE
+                if not creator.is_approved or not is_active_creator:
+                    raise Conflict("This creator is no longer available.", code="PACKAGE_UNAVAILABLE")
+                open_session = PaymentSession.objects.filter(order=orders[0], status="created").first()
+                if open_session is not None:
+                    return open_session, orders
             else:
                 raise DomainError("No items or orders specified for checkout.", code="CHECKOUT_EMPTY")
 
     total_amount_paise = sum(o.brand_total_paise for o in orders)
-    gateway_order_id = f"order_rzp_{uuid.uuid4().hex[:16]}"
+    primary_order_id = str(orders[0].id) if orders else str(uuid.uuid4())
+    gateway_order_id = create_razorpay_order(
+        amount_paise=total_amount_paise,
+        receipt_id=primary_order_id,
+        order_id=primary_order_id,
+    )
 
     session = PaymentSession.objects.create(
         brand=brand,
@@ -176,6 +234,49 @@ def verify_payment(
     )
 
     return receipt
+
+
+def handle_payment_failed(*, gateway_order_id: str, payment_id: str, payload: dict[str, Any]) -> None:
+    """Log and track payment failures from Razorpay webhooks."""
+    logger.warning("Razorpay payment %s failed for gateway order %s: %s", payment_id, gateway_order_id, payload)
+    if gateway_order_id:
+        session = PaymentSession.objects.filter(gateway_order_id=gateway_order_id).first()
+        if session and session.status == "created":
+            metadata = session.metadata or {}
+            metadata["last_payment_failed"] = {
+                "payment_id": payment_id,
+                "error_code": payload.get("error_code"),
+                "error_description": payload.get("error_description"),
+                "failed_at": timezone.now().isoformat(),
+            }
+            session.metadata = metadata
+            session.save(update_fields=["metadata", "updated_at"])
+
+
+@transaction.atomic
+def handle_refund_processed(*, refund_id: str, payment_id: str, payload: dict[str, Any] | None = None) -> None:
+    """Process a refund event from Razorpay webhook, updating receipt and order status."""
+    logger.info("Razorpay refund %s processed for payment %s", refund_id, payment_id)
+    receipt = PaymentReceipt.objects.select_for_update().filter(gateway_payment_id=payment_id).first()
+    if receipt:
+        receipt.status = "refunded"
+        receipt.save(update_fields=["status", "updated_at"])
+        session = receipt.payment_session
+        if session:
+            session.status = "refunded"
+            session.save(update_fields=["status", "updated_at"])
+
+        order_ids = session.metadata.get("orderIds", []) if session else []
+        if receipt.order_id and str(receipt.order_id) not in order_ids:
+            order_ids.append(str(receipt.order_id))
+        for oid in order_ids:
+            ord_obj = Order.objects.select_for_update().filter(pk=UUID(oid)).first()
+            if ord_obj and ord_obj.status == OrderStatus.REFUND_PENDING:
+                order_services.system_event(
+                    order_id=ord_obj.id,
+                    event="refund_completed",
+                    reason=f"Refund completed via Razorpay {refund_id}",
+                )
 
 
 @transaction.atomic

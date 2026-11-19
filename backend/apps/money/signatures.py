@@ -17,6 +17,11 @@ from django.conf import settings
 from apps.core.exceptions import DomainError
 
 _PLACEHOLDER_SECRETS = frozenset({"", "test_secret_collab", "test_webhook_secret"})
+_PLACEHOLDER_KEYS = frozenset({"", "rzp_test_collabmarketplace"})
+_MOCK_SECRETS = frozenset(
+    {"", "test_secret_collab", "test_webhook_secret", "unit-test-key-secret", "unit-test-webhook-secret"}
+)
+_MOCK_KEYS = frozenset({"", "rzp_test_collabmarketplace", "unit-test-key-id"})
 
 
 class PaymentsNotConfigured(DomainError):
@@ -29,6 +34,15 @@ class InvalidSignature(DomainError):
     status_code = 400
     code = "INVALID_SIGNATURE"
     message = "Payment could not be verified."
+
+
+PaymentSignatureInvalid = InvalidSignature
+
+
+def are_payments_configured() -> bool:
+    key_id = getattr(settings, "RAZORPAY_KEY_ID", "") or ""
+    secret = getattr(settings, "RAZORPAY_KEY_SECRET", "") or ""
+    return bool(key_id) and bool(secret) and key_id not in _MOCK_KEYS and secret not in _MOCK_SECRETS
 
 
 def _secret(name: str) -> str:
