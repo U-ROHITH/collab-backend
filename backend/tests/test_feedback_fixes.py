@@ -25,19 +25,19 @@ def ok(resp: Any, code: int = 200) -> Any:
     return resp.json()["data"]
 
 
-# --- 1. Blind bidding: creators don't see the brand on campaigns ------------------------------
+# --- 1. Campaign brand exposure: creators and guests see the brand object ---------------------
 def test_creator_does_not_see_brand_on_campaigns(brand: Any, creator: Any, campaign_payload: dict) -> None:
     c = ok(brand.post("/v1/campaigns/", campaign_payload, format="json"), 201)
     assert c["brand"]["name"] == "Nimbu Foods"  # the owner still sees it
-    assert ok(creator.get("/v1/campaigns/"))[0]["brand"] is None
-    assert ok(creator.get(f"/v1/campaigns/{c['id']}/"))["brand"] is None
+    assert ok(creator.get("/v1/campaigns/"))[0]["brand"]["name"] == "Nimbu Foods"
+    assert ok(creator.get(f"/v1/campaigns/{c['id']}/"))["brand"]["name"] == "Nimbu Foods"
     ok(
         creator.post(
             f"/v1/campaigns/{c['id']}/bids/", {"price": 300_000, "message": "hi", "deliveryDays": 3}, format="json"
         ),
         201,
     )
-    assert ok(creator.get("/v1/creators/me/bids/"))[0]["campaign"]["brand"] is None  # still hidden after bidding
+    assert ok(creator.get("/v1/creators/me/bids/"))[0]["campaign"]["brand"]["name"] == "Nimbu Foods"
 
 
 def test_bid_alone_does_not_reveal_brand_profile(brand: Any, creator: Any, campaign_payload: dict) -> None:

@@ -40,6 +40,7 @@ def public_open_campaigns() -> QuerySet[Campaign]:
         status=CampaignStatus.OPEN,
         moderation_status=ModerationStatus.LIVE,
         closes_at__gt=timezone.now(),
+        brand__owner__status=UserStatus.ACTIVE,
     )
 
 
@@ -99,7 +100,7 @@ def bids_of(user: User) -> QuerySet[Bid]:
     )
     return (
         Bid.objects.filter(creator__user=user)
-        .select_related("campaign", "creator")
+        .select_related("campaign__brand__owner", "creator")
         .annotate(campaign_bid_count=Coalesce(Subquery(counts), 0))
     )
 

@@ -90,6 +90,9 @@ class AdminSuspendAccountView(APIView):
                 user.creator.featured = False
                 user.creator.featured_order = 0
                 user.creator.save(update_fields=["featured", "featured_order", "updated_at"])
+                Bid.objects.filter(creator=user.creator, status=BidStatus.PENDING).update(
+                    status=BidStatus.HELD, updated_at=timezone.now()
+                )
 
             elif user.role == Role.BRAND and hasattr(user, "brand") and user.brand:
                 live_campaigns = Campaign.objects.filter(brand=user.brand, moderation_status=ModerationStatus.LIVE)
@@ -100,6 +103,9 @@ class AdminSuspendAccountView(APIView):
                     Bid.objects.filter(campaign=camp, status=BidStatus.PENDING).update(
                         status=BidStatus.HELD, updated_at=timezone.now()
                     )
+
+            from apps.core.public_cache import invalidate
+            invalidate()
 
             audit = record_audit(
                 admin=request.user,
@@ -147,6 +153,9 @@ class AdminReactivateAccountView(APIView):
 
             user.status = UserStatus.ACTIVE
             user.save(update_fields=["status", "updated_at"])
+
+            from apps.core.public_cache import invalidate
+            invalidate()
 
             audit = record_audit(
                 admin=request.user,

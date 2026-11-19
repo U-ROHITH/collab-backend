@@ -46,7 +46,7 @@ def test_my_bids_lists_only_this_creators_bids_with_campaign(
     assert len(rows) == 1
     row = rows[0]
     assert row["campaign"]["id"] == bid_on["id"] and row["campaign"]["title"] == "Bid on this"
-    assert row["campaign"]["brand"] is None  # blind bidding still applies
+    assert row["campaign"]["brand"]["name"] == "Nimbu Foods"
     assert row["campaign"]["bidCount"] == 2
     assert row["price"]["amount"] == 300_000 and row["status"] == "pending"
 
@@ -100,7 +100,8 @@ def test_guest_can_open_an_open_campaign_with_guest_view(
     c = _campaign(brand, campaign_payload)
     data = ok(anon.get(f"/v1/campaigns/{c['id']}/"))
     assert data["id"] == c["id"] and data["title"] == campaign_payload["title"]
-    assert data["brief"] is None and data["usageRights"] is None and data["brand"] is None
+    assert data["brief"] is None and data["usageRights"] is None
+    assert data["brand"]["name"] == "Nimbu Foods"
 
 
 def test_guest_cannot_open_a_draft(anon: APIClient, brand: APIClient, campaign_payload: dict[str, Any]) -> None:

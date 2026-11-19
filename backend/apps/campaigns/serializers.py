@@ -2,6 +2,7 @@ from typing import Any
 
 from rest_framework import serializers
 
+from apps.brands.serializers import BrandBriefSerializer
 from apps.campaigns.models import Bid, BidStatus, Campaign, CampaignStatus
 from apps.core.dates import EndOfDayDateField, LocalDateField
 from apps.core.parties import creator_public
@@ -18,7 +19,7 @@ class CampaignModerationOutput(serializers.Serializer):
 
 
 class CampaignOutput(serializers.ModelSerializer):
-    """Creators bid blind: `brand` is null for creators. They learn the brand once an order exists.
+    """Campaign serializer for creators, brands, and public listing.
     With context["guest"] (signed-out, mid-signup, unapproved creator) `brief` and `usageRights` are null."""
 
     brand = serializers.SerializerMethodField()
@@ -76,10 +77,9 @@ class CampaignOutput(serializers.ModelSerializer):
         }
 
     def get_brand(self, obj: Campaign) -> dict[str, Any] | None:
-        request = self.context.get("request")
-        if request is None or getattr(request.user, "role", None) != Role.BRAND:
+        if not getattr(obj, "brand_id", None) or getattr(obj, "brand", None) is None:
             return None
-        return {"id": str(obj.brand_id), "name": obj.brand.name, "logoUrl": obj.brand.logo_url}
+        return BrandBriefSerializer(obj.brand).data
 
     def get_bidCount(self, obj: Campaign) -> int:  # noqa: N802
         """Bids that weren't withdrawn. Lists annotate `bid_count`; single objects fall back to a count."""

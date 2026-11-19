@@ -42,17 +42,19 @@ def test_guest_campaign_list_hides_brief(
     assert guest.status_code == 200
     items = guest.json()["data"]
     assert [c["id"] for c in items] == [campaign["id"]]  # drafts never public
-    assert items[0]["brief"] is None and items[0]["usageRights"] is None and items[0]["brand"] is None
+    assert items[0]["brief"] is None and items[0]["usageRights"] is None
+    assert items[0]["brand"]["name"] == "Nimbu Foods"
     assert items[0]["title"] == campaign_payload["title"] and items[0]["budgetMax"]["amount"] == 1_500_000
 
     # approved creators still get the full brief; brands their own campaigns with brand info
     full = creator.get("/v1/campaigns/").json()["data"][0]
-    assert full["brief"] == campaign_payload["brief"] and full["brand"] is None
+    assert full["brief"] == campaign_payload["brief"] and full["brand"]["name"] == "Nimbu Foods"
     assert brand.get("/v1/campaigns/").json()["data"][0]["brand"]["name"]
 
     # detail is public with the same guest view (frontend issues 2026-11-12 #6); writes and bids stay signed-in only
     detail = anon.get(f"/v1/campaigns/{campaign['id']}/").json()["data"]
-    assert detail["brief"] is None and detail["usageRights"] is None and detail["brand"] is None
+    assert detail["brief"] is None and detail["usageRights"] is None
+    assert detail["brand"]["name"] == "Nimbu Foods"
     assert anon.post("/v1/campaigns/", campaign_payload, format="json").status_code == 401
     assert anon.get(f"/v1/campaigns/{campaign['id']}/bids/").status_code == 401
 

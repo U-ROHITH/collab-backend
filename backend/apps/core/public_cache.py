@@ -19,6 +19,7 @@ WATCHED_MODELS = (
     "campaigns.Bid",
     "orders.Review",
     "brands.Brand",
+    "identity.User",
 )
 
 

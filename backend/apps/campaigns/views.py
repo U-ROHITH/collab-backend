@@ -49,7 +49,7 @@ class CampaignListCreateView(ListAPIView):
         query.is_valid(raise_exception=True)
         filters = query.validated_data
         user = self.request.user
-        qs = services.campaigns_listed_for(user).select_related("brand")
+        qs = services.campaigns_listed_for(user).select_related("brand", "brand__owner")
         if (s := filters.get("status")) and getattr(user, "role", None) == Role.BRAND:
             qs = qs.filter(status=s)
         return services.with_bid_count(services.filter_campaigns(qs, filters))
@@ -76,7 +76,8 @@ class CampaignDetailView(APIView):
     @extend_schema(responses=CampaignOutput)
     @cache_for_guests
     def get(self, request: Request, campaign_id: UUID) -> Response:
-        qs = services.with_bid_count(services.campaigns_listed_for(request.user).select_related("brand"))
+        listed = services.campaigns_listed_for(request.user).select_related("brand", "brand__owner")
+        qs = services.with_bid_count(listed)
         campaign = qs.filter(pk=campaign_id).first()
         if campaign is None:
             raise NotFound()
@@ -132,9 +133,13 @@ class BidListCreateView(ListAPIView):
 
     def get_queryset(self):  # type: ignore[no-untyped-def]
         user = self.request.user
-        qs = Bid.objects.select_related("creator").filter(campaign_id=self.kwargs["campaign_id"])
+        qs = Bid.objects.select_related("creator", "creator__user").filter(campaign_id=self.kwargs["campaign_id"])
         if user.role == Role.BRAND:
-            return qs.filter(campaign__brand__owner=user)
+            from apps.identity.models import UserStatus
+
+            return qs.filter(campaign__brand__owner=user).exclude(
+                creator__user__status__in=[UserStatus.SUSPENDED, UserStatus.DEACTIVATED]
+            )
         return qs.filter(creator__user=user)
 
     @extend_schema(request=BidInput, responses={201: BidOutput})

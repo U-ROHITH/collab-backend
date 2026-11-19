@@ -11,6 +11,16 @@ _PAN = re.compile(r"^[A-Z]{5}\d{4}[A-Z]$")
 _CIN = re.compile(r"^[LU][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$")
 
 
+class BrandBriefSerializer(serializers.ModelSerializer):
+    userId = serializers.UUIDField(source="owner_id", read_only=True)  # noqa: N815
+    logoUrl = serializers.CharField(source="logo_url", read_only=True, allow_blank=True)  # noqa: N815
+    accountStatus = serializers.CharField(source="owner.status", read_only=True)  # noqa: N815
+
+    class Meta:
+        model = Brand
+        fields = ("id", "userId", "name", "logoUrl", "accountStatus")
+
+
 class BrandOutput(serializers.ModelSerializer):
     userId = serializers.UUIDField(source="owner_id", read_only=True)  # noqa: N815
     legalName = serializers.CharField(source="legal_name")  # noqa: N815
@@ -135,7 +145,15 @@ class ListDetailOutput(serializers.ModelSerializer):
         fields = ("id", "name", "creators")
 
     def get_creators(self, obj: BrandList) -> list[dict[str, Any]]:
-        return CreatorCardOutput([i.creator for i in obj.items.select_related("creator")], many=True).data
+        from apps.identity.models import UserStatus
+
+        items = obj.items.select_related("creator", "creator__user")
+        active_creators = [
+            i.creator
+            for i in items
+            if not i.creator.user or i.creator.user.status == UserStatus.ACTIVE
+        ]
+        return CreatorCardOutput(active_creators, many=True).data
 
 
 class ListInput(StrictSerializer):

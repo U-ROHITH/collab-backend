@@ -6,13 +6,14 @@ import pytest
 from django.test import Client
 
 LIVE = "https://linkloom-frontend.vercel.app"
+ORCIN = "https://linkloom-orcin.vercel.app"
 PREVIEW_PATTERN = r"^https://linkloom-frontend-[a-z0-9-]+\.vercel\.app$"
 
 
 @pytest.fixture
 def cors(settings):  # type: ignore[no-untyped-def]
     settings.CORS_ALLOW_ALL_ORIGINS = False
-    settings.CORS_ALLOWED_ORIGINS = [LIVE]
+    settings.CORS_ALLOWED_ORIGINS = [LIVE, ORCIN]
     settings.CORS_ALLOWED_ORIGIN_REGEXES = [PREVIEW_PATTERN]
 
 
@@ -20,6 +21,7 @@ def cors(settings):  # type: ignore[no-untyped-def]
     ("origin", "allowed"),
     [
         (LIVE, True),
+        (ORCIN, True),
         ("https://linkloom-frontend-git-main-team.vercel.app", True),
         ("https://linkloom-frontend-a1b2c3d4-team.vercel.app", True),
         ("https://evil.example.com", False),

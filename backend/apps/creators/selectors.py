@@ -16,6 +16,7 @@ def public_creators() -> QuerySet[Creator]:
     return (
         _with_starting_price(Creator.objects.filter(approval_status=ApprovalStatus.APPROVED))
         .filter(Q(user__isnull=True) | Q(user__status=UserStatus.ACTIVE))
+        .exclude(user__status__in=[UserStatus.SUSPENDED, UserStatus.DEACTIVATED])
         .order_by("-featured", "featured_order", "-rating_sum", "-created_at")
     )
 
@@ -48,7 +49,13 @@ def search_creators(params: dict[str, Any]) -> QuerySet[Creator]:
 def can_view_creator(viewer: Any, creator: Creator) -> bool:
     """Approved creators are public. Others are visible to themselves, staff/admins, and brands that already
     work with them (bid, offer, order or conversation)."""
-    from apps.identity.models import Role
+    from apps.identity.models import Role, UserStatus
+
+    # Suspended or deactivated creators cannot be viewed by the public or brands
+    if creator.user and creator.user.status in (UserStatus.SUSPENDED, UserStatus.DEACTIVATED):
+        if viewer and getattr(viewer, "is_authenticated", False) and (viewer.is_staff or viewer.role == Role.ADMIN):
+            return True
+        return False
 
     if creator.approval_status == ApprovalStatus.APPROVED:
         return True
@@ -68,7 +75,7 @@ def can_view_creator(viewer: Any, creator: Creator) -> bool:
 def get_public_creator(creator_id: Any, viewer: Any = None) -> Creator | None:
     active = CreatorPackage.objects.filter(active=True)
     creator = (
-        _with_starting_price(Creator.objects.filter(pk=creator_id))
+        _with_starting_price(Creator.objects.filter(pk=creator_id).select_related("user"))
         .prefetch_related(Prefetch("packages", queryset=active, to_attr="active_packages"), "media")
         .first()
     )

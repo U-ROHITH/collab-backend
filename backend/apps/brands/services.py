@@ -145,9 +145,13 @@ def checkout_cart(*, brand: Brand, actor: User, usage_rights: dict[str, Any]) ->
         if not items:
             raise DomainError("Your cart is empty.", code="CART_EMPTY")
         orders = []
+        from apps.identity.models import UserStatus
+
         for item in items:
             package = item.package
-            if not package.active or not package.creator.is_approved:
+            creator_user = getattr(package.creator, "user", None)
+            is_active_creator = creator_user is None or creator_user.status == UserStatus.ACTIVE
+            if not package.active or not package.creator.is_approved or not is_active_creator:
                 raise Conflict(f"'{package.title}' is no longer available.", code="PACKAGE_UNAVAILABLE")
             orders.append(
                 create_order(

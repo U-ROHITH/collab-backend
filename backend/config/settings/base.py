@@ -115,7 +115,10 @@ STORAGES = {
 }
 
 # Admin login (session + CSRF) needs the public origin when behind Render's proxy.
-CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
+CSRF_TRUSTED_ORIGINS = env.list(
+    "CSRF_TRUSTED_ORIGINS",
+    default=["https://linkloom-frontend.vercel.app", "https://linkloom-orcin.vercel.app"],
+)
 if _render_host := env("RENDER_EXTERNAL_HOSTNAME", default=""):
     CSRF_TRUSTED_ORIGINS.append(f"https://{_render_host}")
 
@@ -146,7 +149,10 @@ STORAGE_PRIVATE_BUCKET = env("STORAGE_PRIVATE_BUCKET", default="private")
 GALLERY_MAX_ITEMS = 12
 
 # --- CORS -----------------------------------------------------------------------------------
-CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
+CORS_ALLOWED_ORIGINS = env.list(
+    "CORS_ALLOWED_ORIGINS",
+    default=["https://linkloom-frontend.vercel.app", "https://linkloom-orcin.vercel.app"],
+)
 # Patterns for preview deployments, e.g. ^https://linkloom-frontend-[a-z0-9-]+\.vercel\.app$
 CORS_ALLOWED_ORIGIN_REGEXES = env.list("CORS_ALLOWED_ORIGIN_REGEXES", default=[])
 CORS_ALLOW_CREDENTIALS = False  # bearer tokens, not cookies
