@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     "apps.money",
     "apps.moderation",
     "apps.pitches",
+    "apps.support",
 ]
 
 MIDDLEWARE = [

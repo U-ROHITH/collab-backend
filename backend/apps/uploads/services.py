@@ -194,6 +194,14 @@ def can_access(user: User, upload: Upload) -> bool:
         from apps.messaging.models import Message
 
         return Message.objects.filter(attachment=upload, conversation__in=conversations_for(user)).exists()
+    if upload.kind == UploadKind.SUPPORT_ATTACHMENT:
+        from apps.support.models import SupportMessage
+
+        return SupportMessage.objects.filter(
+            ticket__user=user,
+            internal=False,
+            attachment_ids__contains=[str(upload.id)],
+        ).exists()
     return bool(upload.public_url)
 
 

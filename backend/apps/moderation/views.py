@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.exceptions import Conflict
-from apps.moderation.models import AbuseReport, AbuseReportStatus
+from apps.moderation.models import AbuseReport, AbuseReportStatus, AbuseTargetType
 from apps.moderation.serializers import AbuseReportInput, AbuseReportOutput
 from apps.moderation.services import resolve_target
 
@@ -27,7 +27,15 @@ class AbuseReportCreateView(APIView):
         target_id = data["targetId"]
 
         # Validate target exists and retrieve owner user
-        _, target_user = resolve_target(target_type, target_id)
+        target_instance, target_user = resolve_target(target_type, target_id)
+
+        # Normalize aliases to canonical AbuseTargetType
+        if target_type == "chat":
+            target_type = AbuseTargetType.MESSAGE
+        elif target_type == "profile":
+            from apps.brands.models import Brand
+
+            target_type = AbuseTargetType.BRAND if isinstance(target_instance, Brand) else AbuseTargetType.CREATOR
 
         # Enforce one report per user per target
         if AbuseReport.objects.filter(reporter=request.user, target_type=target_type, target_id=target_id).exists():

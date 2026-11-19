@@ -18,6 +18,7 @@ from apps.moderation.models import AbuseReport, AbuseReportStatus, BidAlert, Bid
 from apps.notifications.models import Notification
 from apps.orders.admin_views import ESCROW_HELD_STATUSES
 from apps.orders.models import Dispute, DisputeStatus, Order, OrderStatus
+from apps.support.models import SupportTicket, TicketStatus
 
 
 class AdminDashboardAccountsOutput(serializers.Serializer):
@@ -92,6 +93,7 @@ class AdminCountsOutput(serializers.Serializer):
     reports = serializers.IntegerField()
     alerts = serializers.IntegerField()
     notifications = serializers.IntegerField()
+    support = serializers.IntegerField()
 
 
 @extend_schema(tags=["Admin - System"])
@@ -270,4 +272,5 @@ class AdminCountsView(APIView):
                 status__in=[BidAlertStatus.PENDING, BidAlertStatus.FROZEN]
             ).count(),
             "notifications": Notification.objects.filter(user=request.user, read_at__isnull=True).count(),
+            "support": SupportTicket.objects.filter(status=TicketStatus.OPEN).count(),
         })

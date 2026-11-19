@@ -36,6 +36,26 @@ def resolve_target(target_type: str, target_id: UUID) -> tuple[Any, User | None]
             raise NotFound("Target review not found.")
         return rev, rev.brand.owner if rev.brand else None
 
+    if target_type in (AbuseTargetType.MESSAGE, "chat"):
+        from apps.messaging.models import Message
+
+        msg = Message.objects.select_related("sender").filter(pk=target_id).first()
+        if not msg:
+            raise NotFound("Target message not found.")
+        return msg, msg.sender
+
+    if target_type == "profile":
+        c = Creator.objects.select_related("user").filter(pk=target_id).first()
+        if c:
+            return c, c.user
+        b = Brand.objects.select_related("owner").filter(pk=target_id).first()
+        if b:
+            return b, b.owner
+        u = User.objects.filter(pk=target_id).first()
+        if u:
+            return u, u
+        raise NotFound("Target profile not found.")
+
     # Default lookup in User
     u = User.objects.filter(pk=target_id).first()
     if not u:

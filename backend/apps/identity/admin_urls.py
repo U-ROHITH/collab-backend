@@ -8,4 +8,5 @@ urlpatterns = [
     path("moderation/", include("apps.moderation.admin_urls")),
     path("finance/", include("apps.money.admin_urls")),
     path("system/", include("apps.identity.admin_system_urls")),
+    path("support/", include("apps.support.admin_urls")),
 ]

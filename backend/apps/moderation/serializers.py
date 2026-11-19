@@ -8,9 +8,11 @@ from apps.moderation.models import (
     BidAlert,
 )
 
+ALLOWED_REPORT_TARGETS = (*AbuseTargetType.values, "profile", "chat")
+
 
 class AbuseReportInput(StrictSerializer):
-    targetType = serializers.ChoiceField(choices=AbuseTargetType.values)  # noqa: N815
+    targetType = serializers.ChoiceField(choices=ALLOWED_REPORT_TARGETS)  # noqa: N815
     targetId = serializers.UUIDField()  # noqa: N815
     reason = serializers.CharField(min_length=2, max_length=100)
     details = serializers.CharField(required=False, allow_blank=True, default="")
