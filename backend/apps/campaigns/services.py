@@ -238,9 +238,27 @@ def _open_campaign_for_bidding(campaign_id: UUID) -> Campaign:
 
 def create_bid(*, creator: Creator, campaign_id: UUID, data: dict[str, Any]) -> Bid:
     campaign = _open_campaign_for_bidding(campaign_id)
+    fields = {_BID_FIELDS[k]: v for k, v in data.items()}
     try:
         with transaction.atomic():
-            bid = Bid.objects.create(campaign=campaign, creator=creator, **{_BID_FIELDS[k]: v for k, v in data.items()})
+            existing = (
+                Bid.objects.select_for_update()
+                .filter(campaign=campaign, creator=creator)
+                .first()
+            )
+            if existing is not None:
+                if existing.status != BidStatus.WITHDRAWN:
+                    raise Conflict("You already bid on this campaign. Edit your bid instead.", code="BID_EXISTS")
+                for field, value in fields.items():
+                    setattr(existing, field, value)
+                existing.status = BidStatus.PENDING
+                existing.version = F("version") + 1
+                existing.save(update_fields=[*fields.keys(), "status", "version", "updated_at"])
+                existing.refresh_from_db()
+                bid = existing
+            else:
+                bid = Bid.objects.create(campaign=campaign, creator=creator, **fields)
+
             notify(
                 user_id=campaign.brand.owner_id,
                 type="new_bid",

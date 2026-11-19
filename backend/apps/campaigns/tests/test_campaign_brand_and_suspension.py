@@ -121,3 +121,65 @@ def test_suspended_brand_campaigns_are_hidden(brand_owner: User, creator_user: U
     guest_client = APIClient()
     resp = guest_client.get(f"/v1/campaigns/{campaign.id}/")
     assert resp.status_code == 404
+
+
+def test_creator_can_rebid_after_withdrawing_bid(brand_owner: User, creator_user: User) -> None:
+    from apps.kyc.models import KycProfile, KycStatus
+
+    KycProfile.objects.create(
+        user=creator_user,
+        status=KycStatus.VERIFIED,
+    )
+
+    brand = brand_owner.brand
+    campaign = Campaign.objects.create(
+        brand=brand,
+        title="Collab Brief",
+        brief="Promote our product",
+        platform="instagram",
+        deliverables="1 Reel",
+        budget_min_paise=500_000,
+        budget_max_paise=1_000_000,
+        closes_at=timezone.now() + timedelta(days=7),
+        status=CampaignStatus.OPEN,
+        moderation_status=ModerationStatus.LIVE,
+    )
+
+    creator_client = APIClient()
+    creator_client.credentials(HTTP_AUTHORIZATION=f"Bearer {issue_tokens(creator_user).access}")
+
+    # 1. Submit initial bid -> 201 Created
+    bid_payload = {"price": 600_000, "message": "My first bid proposal", "deliveryDays": 5}
+    resp1 = creator_client.post(f"/v1/campaigns/{campaign.id}/bids/", bid_payload, format="json")
+    assert resp1.status_code == 201
+    bid_data1 = resp1.json()["data"]
+    bid_id = bid_data1["id"]
+    assert bid_data1["status"] == "pending"
+    assert bid_data1["price"]["amount"] == 600_000
+
+    # 2. Duplicate bid while pending -> 409 BID_EXISTS
+    resp_dup = creator_client.post(f"/v1/campaigns/{campaign.id}/bids/", bid_payload, format="json")
+    assert resp_dup.status_code == 409
+    assert resp_dup.json()["error"]["code"] == "BID_EXISTS"
+
+    # 3. Withdraw bid -> 200 OK, status='withdrawn'
+    resp_withdraw = creator_client.post(f"/v1/campaigns/{campaign.id}/bids/{bid_id}/withdraw/")
+    assert resp_withdraw.status_code == 200
+    assert resp_withdraw.json()["data"]["status"] == "withdrawn"
+
+    # 4. Re-bid after withdrawal -> 201 Created, status resets to 'pending' with new price/message
+    new_bid_payload = {"price": 750_000, "message": "My revised new bid proposal", "deliveryDays": 3}
+    resp2 = creator_client.post(f"/v1/campaigns/{campaign.id}/bids/", new_bid_payload, format="json")
+    assert resp2.status_code == 201
+    bid_data2 = resp2.json()["data"]
+    assert bid_data2["id"] == bid_id
+    assert bid_data2["status"] == "pending"
+    assert bid_data2["price"]["amount"] == 750_000
+    assert bid_data2["message"] == "My revised new bid proposal"
+    assert bid_data2["deliveryDays"] == 3
+
+    # 5. Duplicate bid while pending again -> 409 BID_EXISTS
+    resp_dup2 = creator_client.post(f"/v1/campaigns/{campaign.id}/bids/", new_bid_payload, format="json")
+    assert resp_dup2.status_code == 409
+    assert resp_dup2.json()["error"]["code"] == "BID_EXISTS"
+
