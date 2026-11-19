@@ -119,6 +119,9 @@ CSRF_TRUSTED_ORIGINS = env.list(
     "CSRF_TRUSTED_ORIGINS",
     default=["https://linkloom-frontend.vercel.app", "https://linkloom-orcin.vercel.app"],
 )
+for _origin in ("https://linkloom-frontend.vercel.app", "https://linkloom-orcin.vercel.app"):
+    if _origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(_origin)
 if _render_host := env("RENDER_EXTERNAL_HOSTNAME", default=""):
     CSRF_TRUSTED_ORIGINS.append(f"https://{_render_host}")
 
@@ -153,6 +156,9 @@ CORS_ALLOWED_ORIGINS = env.list(
     "CORS_ALLOWED_ORIGINS",
     default=["https://linkloom-frontend.vercel.app", "https://linkloom-orcin.vercel.app"],
 )
+for _origin in ("https://linkloom-frontend.vercel.app", "https://linkloom-orcin.vercel.app"):
+    if _origin not in CORS_ALLOWED_ORIGINS:
+        CORS_ALLOWED_ORIGINS.append(_origin)
 # Patterns for preview deployments, e.g. ^https://linkloom-frontend-[a-z0-9-]+\.vercel\.app$
 CORS_ALLOWED_ORIGIN_REGEXES = env.list("CORS_ALLOWED_ORIGIN_REGEXES", default=[])
 CORS_ALLOW_CREDENTIALS = False  # bearer tokens, not cookies
