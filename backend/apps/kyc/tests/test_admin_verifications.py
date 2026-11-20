@@ -413,3 +413,125 @@ def test_admin_verification_decisions_dispatch_outbound_email(creator: APIClient
     assert len(mail.outbox) == 1
     assert mail.outbox[0].to == ["creator_kyc_outbound@linkloom.test"]
     assert "KYC" in mail.outbox[0].subject
+
+
+def test_admin_verification_detail_exposes_section4_fields(creator: APIClient) -> None:
+    admin_client, _ = _make_admin_client(role=AdminRole.TRUST_SAFETY)
+
+    cr = creator.user.creator
+    cr.social_media_links = {"instagram": "testcreator", "youtube": "testchannel"}
+    cr.platform_stats = {"instagram": {"followersCount": 25000, "engagementRate": 4.5, "avgViews": 12000}}
+    cr.primary_platform = "instagram"
+    cr.follower_count = 25000
+    cr.save()
+
+    _populate_kyc(creator.user)
+    creator.post("/v1/kyc/submit/")
+    vr = VerificationRequest.objects.get(user=creator.user)
+
+    resp = admin_client.get(f"/v1/admin/verifications/{vr.id}/")
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+
+    # User & Account linking
+    assert data["userId"] == str(creator.user.id)
+    assert data["account"] == str(cr.id)
+
+    # Legacy fields preserved
+    assert "kyc" in data
+    assert "profile" in data
+    assert data["profile"]["id"] == str(cr.id)
+
+    # id_doc / idDoc
+    assert "id_doc" in data
+    id_doc = data["id_doc"]
+    assert id_doc["idType"] == "aadhaar"
+    assert id_doc["type"] == "aadhaar"
+    assert id_doc["uploadId"]
+    assert id_doc["url"]
+    assert id_doc["name"]
+    assert id_doc["maskedNumber"]
+    assert id_doc["matchStatus"]
+
+    # pan
+    assert "pan" in data
+    pan = data["pan"]
+    assert pan["name"]
+    assert pan["last4"]
+    assert pan["masked"]
+    assert pan["matchStatus"]
+
+    # bank
+    assert "bank" in data
+    bank = data["bank"]
+    assert bank["holderName"]
+    assert bank["accountHolder"]
+    assert bank["last4"]
+    assert bank["masked"]
+    assert bank["ifsc"]
+    assert bank["matchStatus"]
+
+    # selfie
+    assert data["selfie"] is None
+
+    # documents
+    assert "documents" in data
+    assert isinstance(data["documents"], list)
+    assert len(data["documents"]) >= 1
+    doc = data["documents"][0]
+    assert doc["uploadId"]
+    assert doc["url"]
+    assert doc["type"] == "aadhaar"
+    assert doc["name"]
+
+    # socials & social_accounts
+    assert "socials" in data
+    socials = data["socials"]
+    assert socials["links"]["instagram"] == "testcreator"
+    assert "accounts" in socials
+    assert len(socials["accounts"]) >= 1
+    assert any(acc["platform"] == "instagram" and acc["handle"] == "testcreator" for acc in socials["accounts"])
+
+    assert "social_accounts" in data
+    assert len(data["social_accounts"]) >= 1
+    assert any(acc["platform"] == "instagram" and acc["handle"] == "testcreator" for acc in data["social_accounts"])
+
+
+def test_kyc_submission_guarantees_creator_profile() -> None:
+    import uuid
+
+    from apps.creators.models import Creator
+    from apps.identity.models import Role, User
+    from apps.identity.services import issue_tokens
+
+    # Create a user with role=creator but without creating a Creator row
+    u = User.objects.create_user(
+        email=f"orphan_creator_{uuid.uuid4().hex[:6]}@linkloom.test",
+        password="Password123!",
+        role=Role.CREATOR,
+        full_name="Orphan Creator",
+    )
+    assert not Creator.objects.filter(user=u).exists()
+
+    client = APIClient()
+    tokens = issue_tokens(u)
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens.access}")
+    client.user = u
+
+    _populate_kyc(u)
+    sub_resp = client.post("/v1/kyc/submit/")
+    assert sub_resp.status_code == 200
+
+    # Creator row is guaranteed to be created
+    cr = Creator.objects.filter(user=u).first()
+    assert cr is not None
+    assert cr.display_name == "Orphan Creator"
+
+    # Admin verification detail serializer returns populated profile and account
+    admin_client, _ = _make_admin_client(role=AdminRole.TRUST_SAFETY)
+    vr = VerificationRequest.objects.get(user=u)
+    resp = admin_client.get(f"/v1/admin/verifications/{vr.id}/")
+    assert resp.status_code == 200
+    res_data = resp.json()["data"]
+    assert res_data["account"] == str(cr.id)
+    assert res_data["profile"]["displayName"] == "Orphan Creator"

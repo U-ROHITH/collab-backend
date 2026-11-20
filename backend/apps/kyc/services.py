@@ -258,6 +258,22 @@ def open_verification(user: User, kyc: KycProfile, *, adjust_checks: Any = None)
     from apps.kyc.models import VerificationKind, VerificationRequest, VerificationStatus
     from apps.notifications.services import notify
 
+    if user.role == Role.CREATOR:
+        from apps.creators.models import Creator
+
+        if not getattr(user, "creator", None) and not Creator.objects.filter(user=user).exists():
+            from apps.creators.services import create_creator_for_user
+
+            display_name = user.full_name or (user.email or "").split("@")[0] or "Creator"
+            create_creator_for_user(user=user, display_name=display_name)
+    elif user.role == Role.BRAND:
+        from apps.brands.models import Brand
+
+        if not getattr(user, "brand", None) and not Brand.objects.filter(owner=user).exists():
+            from apps.brands.services import create_brand_for_user
+
+            create_brand_for_user(user=user, name=user.full_name or "Brand")
+
     checks = run_automated_checks(user, kyc)
     if adjust_checks is not None:
         checks = adjust_checks(checks)

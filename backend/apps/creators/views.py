@@ -27,6 +27,13 @@ from apps.identity.permissions import IsCreator
 def _my_creator(request: Request) -> Creator:
     creator = getattr(request.user, "creator", None)
     if creator is None:
+        creator = Creator.objects.filter(user=request.user).first()
+    if creator is None and getattr(request.user, "role", None) == "creator":
+        from apps.creators.services import create_creator_for_user
+
+        display_name = request.user.full_name or (request.user.email or "").split("@")[0] or "Creator"
+        creator = create_creator_for_user(user=request.user, display_name=display_name)
+    if creator is None:
         raise NotFound("Creator profile not found.")
     return creator
 
