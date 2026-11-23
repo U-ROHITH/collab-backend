@@ -29,6 +29,14 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+      - /app/staticfiles:rw,noexec,nosuid,nodev,size=128m,uid=10001,gid=10001,mode=0755
     env_file:
       - .env.production
     environment:
